@@ -3,7 +3,10 @@ import sqlite3
 import time
 from datetime import datetime, timedelta
 from functools import wraps
+
+import click
 import yfinance as yf
+
 from retry_utils import retry_on_rate_limit
 
 
@@ -454,73 +457,49 @@ def save_all_data_for_ticker(ticker_symbol, db_name="stock_data.db"):
         return False
 
 
-if __name__ == "__main__":
-    # Read tickers from nyse_tickers.txt file
+@click.command()
+@click.option("--tickers-file", default="nyse_tickers.txt", help="File with ticker symbols")
+@click.option("--limit", default=None, type=int, help="Limit tickers to process")
+@click.option("--delay", default=2.0, type=float, help="Delay between tickers")
+@click.option("--resume", default=None, help="Resume from a ticker")
+def main(tickers_file, limit, delay, resume):
+    """Process stock data for tickers."""
+    # Read tickers
     try:
-        with open("nyse_tickers.txt", "r") as f:
+        with open(tickers_file, "r") as f:
             tickers = [line.strip() for line in f if line.strip()]
-        print(f"Loaded {len(tickers)} tickers from nyse_tickers.txt")
+        print(f"Loaded {len(tickers)} tickers from {tickers_file}")
     except FileNotFoundError:
-        print("nyse_tickers.txt not found. Using default tickers.")
+        print(f"{tickers_file} not found. Using default tickers.")
         tickers = ["AAPL", "MSFT", "GOOGL", "AMZN"]
 
-    # Allow user to limit the number of tickers to process
-    limit = input(
-        f"Found {len(tickers)} tickers. How many would you like to process? (Enter a number or 'all'): "
-    )
+    # Apply limit
+    if limit is not None and limit < len(tickers):
+        tickers = tickers[:limit]
 
-    if limit.lower() != "all":
-        try:
-            limit = int(limit)
-            tickers = tickers[:limit]
-        except ValueError:
-            print("Invalid input. Processing all tickers.")
-
-    # Ask for delay between tickers to avoid rate limiting
-    delay_input = input(
-        "Enter delay in seconds between processing tickers (recommended: 1-5, default: 2): "
-    )
-    try:
-        delay = float(delay_input) if delay_input.strip() else 2.0
-    except ValueError:
-        print("Invalid input. Using default delay of 2 seconds.")
-        delay = 2.0
-
-    # Add option to resume from a specific ticker
-    resume_option = input("Resume from a specific ticker? (y/n, default: n): ").lower()
+    # Resume point
     start_idx = 0
-    if resume_option == "y":
-        resume_ticker = input("Enter ticker symbol to resume from: ").upper()
-        if resume_ticker in tickers:
-            start_idx = tickers.index(resume_ticker)
-            print(
-                f"Resuming from {resume_ticker} (index {start_idx + 1}/{len(tickers)})"
-            )
-        else:
-            print(f"Ticker {resume_ticker} not found. Starting from the beginning.")
+    if resume and resume.upper() in tickers:
+        start_idx = tickers.index(resume.upper())
+        print(f"Resuming from {resume}")
 
-    print(
-        f"Processing {len(tickers) - start_idx} tickers with {delay} seconds delay between tickers..."
-    )
-
-    # Process each ticker with basic error handling
-    succeeded = 0
-    failed = 0
-
+    # Process tickers
+    succeeded, failed = 0, 0
     for i, ticker in enumerate(tickers[start_idx:], start_idx):
         try:
-            print(f"[{i + 1}/{len(tickers)}] Processing {ticker}...")
+            print(f"[{i+1}/{len(tickers)}] Processing {ticker}...")
             if save_all_data_for_ticker(ticker):
                 succeeded += 1
             else:
                 failed += 1
-
-            # Add a delay between tickers to avoid rate limiting
             if i < len(tickers) - 1:
                 time.sleep(delay)
-
         except Exception as e:
             print(f"Error processing {ticker}: {e}")
             failed += 1
 
     print(f"\nProcessing complete! Succeeded: {succeeded}, Failed: {failed}")
+
+
+if __name__ == "__main__":
+    main()

@@ -182,7 +182,7 @@ def save_financial_metrics(ticker_symbol, db_name="stock_data.db"):
                 cursor.execute(
                     """
                 INSERT OR REPLACE INTO financial_metrics 
-                (ticker, date, is_quarterly, revenue, earnings, eps, pe_ratio, debt_to_equity, operating_margin, roe)
+                (ticker, timestamp, is_quarterly, revenue, earnings, eps, pe_ratio, debt_to_equity, operating_margin, roe)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
@@ -273,7 +273,7 @@ def save_financial_metrics(ticker_symbol, db_name="stock_data.db"):
                 cursor.execute(
                     """
                 INSERT OR REPLACE INTO financial_metrics 
-                (ticker, date, is_quarterly, revenue, earnings, eps, pe_ratio, debt_to_equity, operating_margin, roe)
+                (ticker, timestamp, is_quarterly, revenue, earnings, eps, pe_ratio, debt_to_equity, operating_margin, roe)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (

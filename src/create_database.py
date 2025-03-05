@@ -39,9 +39,15 @@ def create_stock_database(db_name="stock_data.db"):
     CREATE TABLE IF NOT EXISTS financial_metrics (
         ticker TEXT,
         timestamp DATETIME,
-        metric_name TEXT,
-        metric_value REAL,
-        PRIMARY KEY (ticker, timestamp, metric_name)
+        is_quarterly BOOLEAN,
+        revenue REAL,
+        earnings REAL,
+        eps REAL,
+        pe_ratio REAL,
+        debt_to_equity REAL,
+        operating_margin REAL,
+        roe REAL,
+        PRIMARY KEY (ticker, timestamp, is_quarterly)
     )
     """)
 

@@ -73,5 +73,6 @@ docstring-code-format = false
 
 [tool.uv]
 dev-dependencies = [
+    "isort>=6.0.1",
     "ruff>=0.9.9",
 ]

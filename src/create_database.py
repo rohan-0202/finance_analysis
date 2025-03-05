@@ -29,6 +29,7 @@ def create_stock_database(db_name="stock_data.db"):
         low REAL,
         close REAL,
         volume INTEGER,
+        dividends REAL,
         PRIMARY KEY (ticker, timestamp)
     )
     """)

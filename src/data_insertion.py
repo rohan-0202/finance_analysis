@@ -77,7 +77,7 @@ def save_historical_data(
         cursor.executemany(
             """
         INSERT OR REPLACE INTO historical_prices 
-        (ticker, date, open, high, low, close, volume, dividends)
+        (ticker, timestamp, open, high, low, close, volume, dividends)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
             data_to_insert,

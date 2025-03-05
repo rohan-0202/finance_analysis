@@ -7,3 +7,4 @@ lint:
 
 format:
 	uv run ruff format . 
+	uv run isort .

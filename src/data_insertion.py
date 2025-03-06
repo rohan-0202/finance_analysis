@@ -302,6 +302,7 @@ def save_financial_metrics(ticker_symbol, db_name="stock_data.db"):
                     (
                         ticker_symbol,
                         date_dt,
+                        date_dt,
                         False,  # Not quarterly
                         revenue,
                         net_income,
@@ -397,6 +398,7 @@ def save_financial_metrics(ticker_symbol, db_name="stock_data.db"):
                     (
                         ticker_symbol,
                         date_dt,
+                        date_dt,
                         True,  # Is quarterly
                         revenue,
                         net_income,
@@ -447,6 +449,7 @@ def save_options_data(ticker_symbol, db_name="stock_data.db"):
         if not all_dates:
             print(f"No options data available for {ticker_symbol}")
             conn.close()
+            conn.close()
             return
 
         # Filter to include only expirations within the next 6 months
@@ -459,6 +462,7 @@ def save_options_data(ticker_symbol, db_name="stock_data.db"):
 
         if not dates:
             print(f"No options data within 6 months available for {ticker_symbol}")
+            conn.close()
             conn.close()
             return
 
@@ -496,6 +500,7 @@ def save_options_data(ticker_symbol, db_name="stock_data.db"):
                     ),
                 )
                 options_count += 1
+                options_count += 1
 
             # Process puts
             for _, row in puts.iterrows():
@@ -520,6 +525,7 @@ def save_options_data(ticker_symbol, db_name="stock_data.db"):
                         datetime.now(),
                     ),
                 )
+                options_count += 1
                 options_count += 1
 
         conn.commit()
@@ -560,6 +566,7 @@ def save_recent_news(ticker_symbol, db_name="stock_data.db"):
         if not news:
             print(f"No news data available for {ticker_symbol}")
             conn.close()
+            conn.close()
             return
 
         # Filter to only include news from the last 7 days
@@ -574,9 +581,12 @@ def save_recent_news(ticker_symbol, db_name="stock_data.db"):
             for item in news
             if datetime.fromtimestamp(item.get("providerPublishTime", 0))
             > recent_cutoff
+            > recent_cutoff
         ]
 
         if not recent_news:
+            print(f"No new news available for {ticker_symbol}")
+            conn.close()
             print(f"No new news available for {ticker_symbol}")
             conn.close()
             return
@@ -639,6 +649,7 @@ def main(tickers_file, limit, delay, resume):
         print(f"Loaded {len(tickers)} tickers from {tickers_file}")
     except FileNotFoundError:
         print(f"{tickers_file} not found. Using default tickers.")
+        tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
         tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA"]
 
     # Apply limit

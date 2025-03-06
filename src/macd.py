@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Set the matplotlib backend before importing pyplot
 import matplotlib
-matplotlib.use('TkAgg')  # Try this backend first - works on most systems
+
+matplotlib.use("TkAgg")  # Try this backend first - works on most systems
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt

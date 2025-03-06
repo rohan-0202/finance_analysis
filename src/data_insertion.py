@@ -14,10 +14,10 @@ def parse_db_datetime(date_str):
     """Parse datetime strings from the database into datetime objects, handling various formats."""
     if not date_str:
         return None
-        
+
     if isinstance(date_str, datetime):
         return date_str
-        
+
     try:
         # Try parsing with microseconds
         return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S.%f")
@@ -28,10 +28,13 @@ def parse_db_datetime(date_str):
         except ValueError:
             try:
                 # Try ISO format
-                return datetime.fromisoformat(date_str.replace('Z', '+00:00') if 'Z' in date_str else date_str)
+                return datetime.fromisoformat(
+                    date_str.replace("Z", "+00:00") if "Z" in date_str else date_str
+                )
             except ValueError:
                 # Try just the date
                 return datetime.strptime(date_str, "%Y-%m-%d")
+
 
 @retry_on_rate_limit()
 def save_ticker_info(ticker_symbol, db_name="stock_data.db"):
@@ -39,22 +42,23 @@ def save_ticker_info(ticker_symbol, db_name="stock_data.db"):
     try:
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
-        
+
         # Check when the ticker info was last updated
         cursor.execute(
-            "SELECT last_updated FROM ticker_info WHERE ticker = ?",
-            (ticker_symbol,)
+            "SELECT last_updated FROM ticker_info WHERE ticker = ?", (ticker_symbol,)
         )
         result = cursor.fetchone()
-        
+
         # Only update if we don't have data or it's older than 7 days
         if result and result[0]:
             last_updated = parse_db_datetime(result[0])
             if last_updated and (datetime.now() - last_updated).days < 7:
-                print(f"Ticker info for {ticker_symbol} already updated within the last 7 days. Skipping.")
+                print(
+                    f"Ticker info for {ticker_symbol} already updated within the last 7 days. Skipping."
+                )
                 conn.close()
                 return
-        
+
         ticker = yf.Ticker(ticker_symbol)
         info = ticker.info
 
@@ -91,33 +95,39 @@ def save_historical_data(
     try:
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
-        
+
         # Check for the latest date in the database for this ticker
         cursor.execute(
             "SELECT MAX(timestamp) FROM historical_prices WHERE ticker = ?",
-            (ticker_symbol,)
+            (ticker_symbol,),
         )
         latest_date_result = cursor.fetchone()[0]
-        
+
         # If we have data, get data only after that date
         if latest_date_result:
             latest_date = parse_db_datetime(latest_date_result)
             if latest_date:
                 # Add one day to avoid duplicates
                 start_date = (latest_date + timedelta(days=1)).strftime("%Y-%m-%d")
-                print(f"Fetching {ticker_symbol} historical data from {start_date} onwards")
-                
+                print(
+                    f"Fetching {ticker_symbol} historical data from {start_date} onwards"
+                )
+
                 # Use start parameter instead of period
                 ticker = yf.Ticker(ticker_symbol)
                 history = ticker.history(start=start_date, interval=interval)
-                
+
                 if history.empty:
-                    print(f"No new historical data for {ticker_symbol} since {latest_date}")
+                    print(
+                        f"No new historical data for {ticker_symbol} since {latest_date}"
+                    )
                     conn.close()
                     return
             else:
                 # If parsing failed, fetch data for the specified period
-                print(f"Failed to parse latest date for {ticker_symbol}, fetching {period} of data")
+                print(
+                    f"Failed to parse latest date for {ticker_symbol}, fetching {period} of data"
+                )
                 ticker = yf.Ticker(ticker_symbol)
                 history = ticker.history(period=period, interval=interval)
         else:
@@ -152,9 +162,11 @@ def save_historical_data(
             """,
                 data_to_insert,
             )
-            
+
             conn.commit()
-            print(f"{len(data_to_insert)} new records of historical data for {ticker_symbol} saved to database.")
+            print(
+                f"{len(data_to_insert)} new records of historical data for {ticker_symbol} saved to database."
+            )
         else:
             print(f"No new historical data to insert for {ticker_symbol}")
 
@@ -171,24 +183,30 @@ def save_financial_metrics(ticker_symbol, db_name="stock_data.db"):
         # Get the latest financial dates from the database
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
-        
+
         # Check the latest annual and quarterly data
         cursor.execute(
             "SELECT MAX(timestamp) FROM financial_metrics WHERE ticker = ? AND is_quarterly = 0",
-            (ticker_symbol,)
+            (ticker_symbol,),
         )
         latest_annual_result = cursor.fetchone()[0]
-        
+
         cursor.execute(
             "SELECT MAX(timestamp) FROM financial_metrics WHERE ticker = ? AND is_quarterly = 1",
-            (ticker_symbol,)
+            (ticker_symbol,),
         )
         latest_quarterly_result = cursor.fetchone()[0]
-        
+
         # Convert to datetime if not None
-        latest_annual = parse_db_datetime(latest_annual_result) if latest_annual_result else None
-        latest_quarterly = parse_db_datetime(latest_quarterly_result) if latest_quarterly_result else None
-        
+        latest_annual = (
+            parse_db_datetime(latest_annual_result) if latest_annual_result else None
+        )
+        latest_quarterly = (
+            parse_db_datetime(latest_quarterly_result)
+            if latest_quarterly_result
+            else None
+        )
+
         ticker = yf.Ticker(ticker_symbol)
 
         # Get financial data
@@ -204,10 +222,12 @@ def save_financial_metrics(ticker_symbol, db_name="stock_data.db"):
         if not income_stmt.empty and not balance_sheet.empty:
             for date in income_stmt.columns:
                 # Skip if we already have this data
-                date_dt = date.to_pydatetime() if hasattr(date, "to_pydatetime") else date
+                date_dt = (
+                    date.to_pydatetime() if hasattr(date, "to_pydatetime") else date
+                )
                 if latest_annual and date_dt <= latest_annual:
                     continue
-                    
+
                 # Calculate key metrics
                 revenue = (
                     income_stmt.loc["Total Revenue", date]
@@ -297,10 +317,12 @@ def save_financial_metrics(ticker_symbol, db_name="stock_data.db"):
         if not quarterly_income.empty and not quarterly_balance.empty:
             for date in quarterly_income.columns:
                 # Skip if we already have this data
-                date_dt = date.to_pydatetime() if hasattr(date, "to_pydatetime") else date
+                date_dt = (
+                    date.to_pydatetime() if hasattr(date, "to_pydatetime") else date
+                )
                 if latest_quarterly and date_dt <= latest_quarterly:
                     continue
-                    
+
                 # Extract similar metrics for quarterly data
                 revenue = (
                     quarterly_income.loc["Total Revenue", date]
@@ -400,22 +422,24 @@ def save_options_data(ticker_symbol, db_name="stock_data.db"):
     try:
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
-        
+
         # Check the latest options update date
         cursor.execute(
             "SELECT MAX(last_updated) FROM options_data WHERE ticker = ?",
-            (ticker_symbol,)
+            (ticker_symbol,),
         )
         latest_update_result = cursor.fetchone()[0]
-        
+
         # If we updated options data within the last day, skip
         if latest_update_result:
             latest_update = parse_db_datetime(latest_update_result)
             if latest_update and (datetime.now() - latest_update).days < 1:
-                print(f"Options data for {ticker_symbol} already updated within the last day. Skipping.")
+                print(
+                    f"Options data for {ticker_symbol} already updated within the last day. Skipping."
+                )
                 conn.close()
                 return
-        
+
         ticker = yf.Ticker(ticker_symbol)
         # Get available expiration dates
         all_dates = ticker.options
@@ -437,7 +461,7 @@ def save_options_data(ticker_symbol, db_name="stock_data.db"):
             print(f"No options data within 6 months available for {ticker_symbol}")
             conn.close()
             return
-        
+
         # Track options inserted/updated
         options_count = 0
 
@@ -500,7 +524,9 @@ def save_options_data(ticker_symbol, db_name="stock_data.db"):
 
         conn.commit()
         conn.close()
-        print(f"{options_count} options records for {ticker_symbol} saved/updated in database.")
+        print(
+            f"{options_count} options records for {ticker_symbol} saved/updated in database."
+        )
     except Exception as e:
         print(f"Error saving options data for {ticker_symbol}: {e}")
         raise
@@ -512,20 +538,22 @@ def save_recent_news(ticker_symbol, db_name="stock_data.db"):
     try:
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
-        
+
         # Check the latest news date
         cursor.execute(
             "SELECT MAX(publish_date) FROM recent_news WHERE ticker = ?",
-            (ticker_symbol,)
+            (ticker_symbol,),
         )
         latest_news_date_result = cursor.fetchone()[0]
-        
+
         latest_news_date = None
         if latest_news_date_result:
             latest_news_date = parse_db_datetime(latest_news_date_result)
             if latest_news_date:
-                print(f"Found news data for {ticker_symbol} up to {latest_news_date.strftime('%Y-%m-%d')}")
-        
+                print(
+                    f"Found news data for {ticker_symbol} up to {latest_news_date.strftime('%Y-%m-%d')}"
+                )
+
         ticker = yf.Ticker(ticker_symbol)
         news = ticker.news
 
@@ -536,11 +564,11 @@ def save_recent_news(ticker_symbol, db_name="stock_data.db"):
 
         # Filter to only include news from the last 7 days
         recent_cutoff = datetime.now() - timedelta(days=7)
-        
+
         # If we have data in the database, only get newer news
         if latest_news_date and latest_news_date > recent_cutoff:
             recent_cutoff = latest_news_date
-        
+
         recent_news = [
             item
             for item in news
@@ -569,7 +597,9 @@ def save_recent_news(ticker_symbol, db_name="stock_data.db"):
 
         conn.commit()
         conn.close()
-        print(f"{len(recent_news)} new news items for {ticker_symbol} saved to database.")
+        print(
+            f"{len(recent_news)} new news items for {ticker_symbol} saved to database."
+        )
     except Exception as e:
         print(f"Error saving recent news for {ticker_symbol}: {e}")
         raise
@@ -594,7 +624,9 @@ def save_all_data_for_ticker(ticker_symbol, db_name="stock_data.db"):
 
 
 @click.command()
-@click.option("--tickers-file", default="nyse_tickers.txt", help="File with ticker symbols")
+@click.option(
+    "--tickers-file", default="nyse_tickers.txt", help="File with ticker symbols"
+)
 @click.option("--limit", default=None, type=int, help="Limit tickers to process")
 @click.option("--delay", default=2.0, type=float, help="Delay between tickers")
 @click.option("--resume", default=None, help="Resume from a ticker")
@@ -623,7 +655,7 @@ def main(tickers_file, limit, delay, resume):
     succeeded, failed = 0, 0
     for i, ticker in enumerate(tickers[start_idx:], start_idx):
         try:
-            print(f"[{i+1}/{len(tickers)}] Processing {ticker}...")
+            print(f"[{i + 1}/{len(tickers)}] Processing {ticker}...")
             if save_all_data_for_ticker(ticker):
                 succeeded += 1
             else:

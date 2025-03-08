@@ -3,6 +3,7 @@ import warnings
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+import click
 # lol
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -11,12 +12,8 @@ import seaborn as sns
 from matplotlib.gridspec import GridSpec
 
 # Import functions from macd.py and rsi.py
-from macd import (
-    calculate_macd,
-    get_latest_macd_signal,
-    get_macd_crossovers,
-    get_signal_stats_text,
-)
+from macd import (calculate_macd, get_latest_macd_signal, get_macd_crossovers,
+                  get_signal_stats_text)
 from rsi import calculate_ticker_rsi, get_latest_rsi_signal, get_rsi_signals
 
 # Suppress pandas warnings
@@ -459,9 +456,12 @@ def plot_indicators(
     return fig
 
 
-if __name__ == "__main__":
-    # Get ticker input
-    ticker = input("Enter a ticker symbol: ").strip().upper()
+# Replace the main function with a Click command
+@click.command()
+@click.argument("ticker", type=str)
+def main(ticker):
+    """Analyze and display technical indicators for a stock ticker."""
+    ticker = ticker.strip().upper()
 
     # Display indicator data
     print(f"\nAnalyzing technical indicators for {ticker}...")
@@ -502,5 +502,9 @@ if __name__ == "__main__":
 
     # Plot the combined chart
     print(f"\nGenerating technical chart for {ticker}...")
-    fig = plot_indicators(ticker)
+    _ = plot_indicators(ticker)
     plt.show()
+
+
+if __name__ == "__main__":
+    main()

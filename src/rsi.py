@@ -269,7 +269,7 @@ if __name__ == "__main__":
                 print(f"{result['ticker']}: No recent RSI signals")
 
         # Print summary
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"Buy signals: {buy_signals}")
         print(f"Sell signals: {sell_signals}")
         print(f"No signals: {no_signals}")

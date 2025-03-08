@@ -47,7 +47,7 @@ target-version = "py312"
 [tool.ruff.lint]
 # Target all Python files
 select = ["E", "F", "B"]  # Error, Formatting, and Bugbear rules
-ignore = []
+ignore = ["E501"]  # Ignore line length violations
 
 [tool.ruff.format]
 # Like Black, use double quotes for strings.

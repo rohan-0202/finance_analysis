@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 # lol
-import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
@@ -218,7 +217,6 @@ def get_signal_stats_text(macd_data: pd.DataFrame) -> str:
     # Get current MACD values
     current_macd = macd_data["macd"].iloc[-1] if not macd_data.empty else 0
     current_signal = macd_data["signal"].iloc[-1] if not macd_data.empty else 0
-    current_hist = macd_data["histogram"].iloc[-1] if not macd_data.empty else 0
 
     # Format the text
     stats_text = f"Bullish: {bullish_crossovers}, Bearish: {bearish_crossovers}\n"
@@ -322,7 +320,7 @@ if __name__ == "__main__":
                 print(f"{result['ticker']}: No recent MACD signals")
 
         # Print summary
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"Buy signals: {buy_signals}")
         print(f"Sell signals: {sell_signals}")
         print(f"No signals: {no_signals}")

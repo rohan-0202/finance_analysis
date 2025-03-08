@@ -3,8 +3,7 @@ import warnings
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-#lol
-
+# lol
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -12,8 +11,12 @@ import seaborn as sns
 from matplotlib.gridspec import GridSpec
 
 # Import functions from macd.py and rsi.py
-from macd import (calculate_macd, get_latest_macd_signal, get_macd_signals,
-                  get_signal_stats_text)
+from macd import (
+    calculate_macd,
+    get_latest_macd_signal,
+    get_macd_crossovers,
+    get_signal_stats_text,
+)
 from rsi import calculate_ticker_rsi, get_latest_rsi_signal, get_rsi_signals
 
 # Suppress pandas warnings
@@ -91,20 +94,7 @@ def plot_indicators(
     gs = GridSpec(3, 1, height_ratios=[2, 1, 1], figure=fig, hspace=0.15)
 
     # Get signals for both indicators
-    macd_crossovers = []
-    for i in range(1, len(macd_data)):
-        # Bullish crossover (MACD crosses above Signal)
-        if (
-            macd_data["macd"].iloc[i - 1] < macd_data["signal"].iloc[i - 1]
-            and macd_data["macd"].iloc[i] > macd_data["signal"].iloc[i]
-        ):
-            macd_crossovers.append((macd_data.index[i], "bullish"))
-        # Bearish crossover (MACD crosses below Signal)
-        elif (
-            macd_data["macd"].iloc[i - 1] > macd_data["signal"].iloc[i - 1]
-            and macd_data["macd"].iloc[i] < macd_data["signal"].iloc[i]
-        ):
-            macd_crossovers.append((macd_data.index[i], "bearish"))
+    macd_crossovers = get_macd_crossovers(macd_data)
 
     rsi_signals = get_rsi_signals(
         ticker_symbol, rsi_window, overbought, oversold, db_name, days
@@ -479,7 +469,7 @@ if __name__ == "__main__":
     # Get MACD data
     _, macd_data = calculate_macd(ticker)
     if macd_data is not None:
-        print(f"\nMACD values (recent):")
+        print("\nMACD values (recent):")
         print(macd_data.tail(3))
 
         # Show latest MACD signal
@@ -496,7 +486,7 @@ if __name__ == "__main__":
     # Get RSI data
     _, rsi_data = calculate_ticker_rsi(ticker)
     if rsi_data is not None:
-        print(f"\nRSI values (recent):")
+        print("\nRSI values (recent):")
         print(rsi_data.tail(3))
 
         # Show latest RSI signal

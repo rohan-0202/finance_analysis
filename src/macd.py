@@ -227,6 +227,32 @@ def get_signal_stats_text(macd_data: pd.DataFrame) -> str:
     return stats_text
 
 
+def get_macd_crossovers(macd_data: pd.DataFrame) -> List[Tuple[datetime, str]]:
+    """
+    Get all MACD crossovers for a given ticker.
+
+    Returns:
+    --------
+    list of tuples: A list of tuples with the date and type of crossover.
+    """
+    macd_crossovers = []
+    for i in range(1, len(macd_data)):
+        # Bullish crossover (MACD crosses above Signal)
+        if (
+            macd_data["macd"].iloc[i - 1] < macd_data["signal"].iloc[i - 1]
+            and macd_data["macd"].iloc[i] > macd_data["signal"].iloc[i]
+        ):
+            macd_crossovers.append((macd_data.index[i], "bullish"))
+        # Bearish crossover (MACD crosses below Signal)
+        elif (
+            macd_data["macd"].iloc[i - 1] > macd_data["signal"].iloc[i - 1]
+            and macd_data["macd"].iloc[i] < macd_data["signal"].iloc[i]
+        ):
+            macd_crossovers.append((macd_data.index[i], "bearish"))
+
+    return macd_crossovers
+
+
 if __name__ == "__main__":
     # Prompt user for ticker input
     user_input = (

@@ -14,6 +14,7 @@ dependencies = [
     "yfinance>=0.2.54",
     "tqdm (>=4.67.1,<5.0.0)",
     "click>=8.1.8",
+    "scipy>=1.15.2",
 ]
 
 # Add the build-system section

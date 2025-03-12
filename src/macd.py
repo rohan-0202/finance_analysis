@@ -1,13 +1,12 @@
-import sqlite3
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-#lol
-
-import matplotlib.pyplot as plt
+# lol
 import pandas as pd
 import seaborn as sns
+
+from db_util import get_historical_data
 
 # Suppress pandas warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -21,43 +20,6 @@ sns.set_theme()  # Apply the default seaborn theme
 def calculate_ema(series: pd.Series, span: int) -> pd.Series:
     """Calculate the Exponential Moving Average for a series."""
     return series.ewm(span=span, adjust=False).mean()
-
-
-def get_historical_data(
-    ticker_symbol: str, db_name: str = "stock_data.db", days: int = 365
-) -> pd.DataFrame:
-    """Fetch historical price data for a ticker from the database."""
-    conn = sqlite3.connect(db_name)
-
-    # Calculate the date range
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
-
-    # Query to get data
-    query = """
-    SELECT timestamp, open, high, low, close, volume
-    FROM historical_prices
-    WHERE ticker = ? AND timestamp >= ?
-    ORDER BY timestamp ASC
-    """
-
-    # First, get the data without parsing dates
-    df = pd.read_sql_query(
-        query, conn, params=(ticker_symbol, start_date.strftime("%Y-%m-%d"))
-    )
-
-    conn.close()
-
-    if df.empty:
-        raise ValueError(f"No historical data found for {ticker_symbol}")
-
-    # Parse the timestamp column manually to avoid timezone issues
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-
-    # Set timestamp as index
-    df.set_index("timestamp", inplace=True)
-
-    return df
 
 
 def calculate_macd(
@@ -255,13 +217,38 @@ def get_signal_stats_text(macd_data: pd.DataFrame) -> str:
     # Get current MACD values
     current_macd = macd_data["macd"].iloc[-1] if not macd_data.empty else 0
     current_signal = macd_data["signal"].iloc[-1] if not macd_data.empty else 0
-    current_hist = macd_data["histogram"].iloc[-1] if not macd_data.empty else 0
 
     # Format the text
     stats_text = f"Bullish: {bullish_crossovers}, Bearish: {bearish_crossovers}\n"
     stats_text += f"Current: MACD={current_macd:.2f}, Signal={current_signal:.2f}"
 
     return stats_text
+
+
+def get_macd_crossovers(macd_data: pd.DataFrame) -> List[Tuple[datetime, str]]:
+    """
+    Get all MACD crossovers for a given ticker.
+
+    Returns:
+    --------
+    list of tuples: A list of tuples with the date and type of crossover.
+    """
+    macd_crossovers = []
+    for i in range(1, len(macd_data)):
+        # Bullish crossover (MACD crosses above Signal)
+        if (
+            macd_data["macd"].iloc[i - 1] < macd_data["signal"].iloc[i - 1]
+            and macd_data["macd"].iloc[i] > macd_data["signal"].iloc[i]
+        ):
+            macd_crossovers.append((macd_data.index[i], "bullish"))
+        # Bearish crossover (MACD crosses below Signal)
+        elif (
+            macd_data["macd"].iloc[i - 1] > macd_data["signal"].iloc[i - 1]
+            and macd_data["macd"].iloc[i] < macd_data["signal"].iloc[i]
+        ):
+            macd_crossovers.append((macd_data.index[i], "bearish"))
+
+    return macd_crossovers
 
 
 if __name__ == "__main__":
@@ -333,7 +320,7 @@ if __name__ == "__main__":
                 print(f"{result['ticker']}: No recent MACD signals")
 
         # Print summary
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"Buy signals: {buy_signals}")
         print(f"Sell signals: {sell_signals}")
         print(f"No signals: {no_signals}")

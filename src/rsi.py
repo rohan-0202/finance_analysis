@@ -1,10 +1,11 @@
-import sqlite3
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+from db_util import get_historical_data
 
 # Suppress pandas warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -45,43 +46,6 @@ def calculate_rsi(series: pd.Series, window: int = 14) -> pd.Series:
     rsi = 100 - (100 / (1 + rs))
 
     return rsi
-
-
-def get_historical_data(
-    ticker_symbol: str, db_name: str = "stock_data.db", days: int = 365
-) -> pd.DataFrame:
-    """Fetch historical price data for a ticker from the database."""
-    conn = sqlite3.connect(db_name)
-
-    # Calculate the date range
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
-
-    # Query to get data
-    query = """
-    SELECT timestamp, open, high, low, close, volume
-    FROM historical_prices
-    WHERE ticker = ? AND timestamp >= ?
-    ORDER BY timestamp ASC
-    """
-
-    # First, get the data without parsing dates
-    df = pd.read_sql_query(
-        query, conn, params=(ticker_symbol, start_date.strftime("%Y-%m-%d"))
-    )
-
-    conn.close()
-
-    if df.empty:
-        raise ValueError(f"No historical data found for {ticker_symbol}")
-
-    # Parse the timestamp column manually to avoid timezone issues
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-
-    # Set timestamp as index
-    df.set_index("timestamp", inplace=True)
-
-    return df
 
 
 def calculate_ticker_rsi(
@@ -305,7 +269,7 @@ if __name__ == "__main__":
                 print(f"{result['ticker']}: No recent RSI signals")
 
         # Print summary
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"Buy signals: {buy_signals}")
         print(f"Sell signals: {sell_signals}")
         print(f"No signals: {no_signals}")

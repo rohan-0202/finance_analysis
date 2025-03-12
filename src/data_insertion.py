@@ -1,8 +1,6 @@
-import random
 import sqlite3
 import time
 from datetime import datetime, timedelta
-from functools import wraps
 
 import click
 import yfinance as yf
@@ -623,6 +621,20 @@ def save_all_data_for_ticker(ticker_symbol, db_name="stock_data.db"):
         return False
 
 
+def ensure_ticker_in_file(ticker_symbol, tickers_file):
+    """Ensure the ticker is in the file."""
+    with open(tickers_file, "r") as f:
+        tickers = [line.strip() for line in f if line.strip()]
+    if ticker_symbol not in tickers:
+        print(f"Adding {ticker_symbol} to {tickers_file}")
+        # Add the ticker to the file
+        with open(tickers_file, "a") as f:
+            f.write(f"{ticker_symbol}\n")
+        print(f"Added {ticker_symbol} to {tickers_file}")
+        tickers.append(ticker_symbol)
+    return tickers
+
+
 @click.command()
 @click.option(
     "--tickers-file", default="nyse_tickers.txt", help="File with ticker symbols"
@@ -630,8 +642,15 @@ def save_all_data_for_ticker(ticker_symbol, db_name="stock_data.db"):
 @click.option("--limit", default=None, type=int, help="Limit tickers to process")
 @click.option("--delay", default=2.0, type=float, help="Delay between tickers")
 @click.option("--resume", default=None, help="Resume from a ticker")
-def main(tickers_file, limit, delay, resume):
+@click.option("--ticker", default=None, help="Ticker to process")
+def main(tickers_file, limit, delay, resume, ticker):
     """Process stock data for tickers."""
+    if ticker:
+        print(f"Saving all data for {ticker}...")
+        ensure_ticker_in_file(ticker, tickers_file)
+        save_all_data_for_ticker(ticker)
+        return
+
     # Read tickers
     try:
         with open(tickers_file, "r") as f:

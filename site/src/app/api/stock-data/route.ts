@@ -8,10 +8,23 @@ const execAsync = promisify(exec);
 
 // Helper function to run a Python script and get the output
 async function runPythonScript(scriptPath: string, args: string[] = []): Promise<string> {
-  const pythonPath = 'python3'; // Adjust if needed
-  const command = `${pythonPath} ${scriptPath} ${args.join(' ')}`;
+  // Always use python3 explicitly to avoid executable permission issues
+  const pythonPath = 'python3'; // Adjust if needed for your environment
+  
+  // Ensure we're properly passing the script path to the Python interpreter
+  // This avoids any issues with executable permissions on the Python files
+  const command = `${pythonPath} "${scriptPath}" ${args.join(' ')}`;
   
   try {
+    // First check if the script file exists
+    try {
+      await fs.access(scriptPath);
+    } catch (error) {
+      console.error(`Python script not found: ${scriptPath}`);
+      throw new Error(`Script not found: ${scriptPath}`);
+    }
+    
+    // Now execute the script
     const { stdout, stderr } = await execAsync(command);
     if (stderr) {
       console.error(`Python script error: ${stderr}`);
@@ -30,7 +43,8 @@ async function runPythonScript(scriptPath: string, args: string[] = []): Promise
 // Function to get MACD data for a ticker
 async function getMacdData(ticker: string) {
   // Fixed path to point directly to the finance_analysis directory
-  const scriptPath = path.join('/home/rohan/code/finance_analysis/src', 'api_fetch_macd.py');
+  const scriptPath = path.resolve('/home/rohan/code/finance_analysis/src', 'api_fetch_macd.py');
+  console.log(`Running MACD script at: ${scriptPath}`);
   const output = await runPythonScript(scriptPath, [ticker]);
   
   try {
@@ -44,7 +58,8 @@ async function getMacdData(ticker: string) {
 // Function to get RSI data for a ticker
 async function getRsiData(ticker: string) {
   // Fixed path to point directly to the finance_analysis directory
-  const scriptPath = path.join('/home/rohan/code/finance_analysis/src', 'api_fetch_rsi.py');
+  const scriptPath = path.resolve('/home/rohan/code/finance_analysis/src', 'api_fetch_rsi.py');
+  console.log(`Running RSI script at: ${scriptPath}`);
   const output = await runPythonScript(scriptPath, [ticker]);
   
   try {
@@ -58,7 +73,8 @@ async function getRsiData(ticker: string) {
 // Function to get price history for a ticker
 async function getPriceHistory(ticker: string) {
   // Fixed path to point directly to the finance_analysis directory
-  const scriptPath = path.join('/home/rohan/code/finance_analysis/src', 'api_fetch_prices.py');
+  const scriptPath = path.resolve('/home/rohan/code/finance_analysis/src', 'api_fetch_prices.py');
+  console.log(`Running price history script at: ${scriptPath}`);
   const output = await runPythonScript(scriptPath, [ticker]);
   
   try {
@@ -76,6 +92,12 @@ export async function GET(request: NextRequest) {
   const ticker = searchParams.get('ticker') || 'SPY';
 
   try {
+    // Validate input parameters
+    if (!dataType) {
+      return NextResponse.json({ error: 'Missing required parameter: type' }, { status: 400 });
+    }
+    
+    // Attempt to fetch the data
     let data;
     
     switch (dataType) {
@@ -93,7 +115,10 @@ export async function GET(request: NextRequest) {
         data = await getPriceHistory(ticker);
         break;
       default:
-        return NextResponse.json({ error: 'Invalid data type requested' }, { status: 400 });
+        return NextResponse.json({ 
+          error: `Invalid data type requested: ${dataType}`,
+          validTypes: ['macd', 'rsi', 'price', 'volume']
+        }, { status: 400 });
     }
     
     // Check if the data contains an error
@@ -103,8 +128,15 @@ export async function GET(request: NextRequest) {
     }
     
     return NextResponse.json(data);
-  } catch (error) {
-    console.error('API error:', error);
-    return NextResponse.json({ error: 'Failed to fetch data' }, { status: 500 });
+  } catch (error: any) {
+    const errorMessage = error.message || 'Unknown error';
+    console.error(`API error for ${dataType} - ${ticker}:`, errorMessage);
+    
+    return NextResponse.json({ 
+      error: 'Failed to fetch data',
+      details: errorMessage,
+      type: dataType,
+      ticker: ticker
+    }, { status: 500 });
   }
 } 

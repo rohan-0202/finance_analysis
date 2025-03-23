@@ -145,9 +145,6 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 .dmypy.json
@@ -171,3 +168,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+site/.next
+site/node_modules
+site/dist
+site/build
+site/coverage
+site/dist

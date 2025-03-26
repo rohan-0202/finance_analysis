@@ -9,10 +9,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.gridspec import GridSpec
 
-# Import functions from macd.py and rsi.py
+# Import functions from macd.py, rsi.py, and obv.py
 from macd import (calculate_macd, get_latest_macd_signal, get_macd_crossovers,
                   get_signal_stats_text)
 from rsi import calculate_ticker_rsi, get_latest_rsi_signal, get_rsi_signals
+from obv import calculate_ticker_obv, get_latest_obv_signal, get_obv_status_text
 
 # Suppress pandas warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -31,6 +32,7 @@ def plot_indicators(
     rsi_window: int = 14,
     overbought: int = 70,
     oversold: int = 30,
+    obv_window: int = 20,
     db_name: str = "stock_data.db",
     days: int = 365,
     save_path: Optional[str] = None,
@@ -38,7 +40,7 @@ def plot_indicators(
     color_palette: str = "muted",
 ) -> plt.Figure:
     """
-    Plot both MACD and RSI indicators with price chart for a given ticker symbol in a single window.
+    Plot MACD, RSI, and OBV indicators with price chart for a given ticker symbol in a single window.
 
     Parameters:
     -----------
@@ -56,6 +58,8 @@ def plot_indicators(
         Level considered overbought for RSI
     oversold : int, default=30
         Level considered oversold for RSI
+    obv_window : int, default=20
+        The window for OBV moving average
     db_name : str, default="stock_data.db"
         The name of the SQLite database file
     days : int, default=365
@@ -72,23 +76,24 @@ def plot_indicators(
     fig : matplotlib.figure.Figure
         The matplotlib figure object
     """
-    # Get MACD and RSI data
+    # Get MACD, RSI, and OBV data
     price_data, macd_data = calculate_macd(
         ticker_symbol, fast_period, slow_period, signal_period, db_name, days
     )
     _, rsi_data = calculate_ticker_rsi(ticker_symbol, rsi_window, db_name, days)
+    _, obv_data = calculate_ticker_obv(ticker_symbol, db_name, days)
 
-    if price_data is None or macd_data is None or rsi_data is None:
+    if price_data is None or macd_data is None or rsi_data is None or obv_data is None:
         print(f"Could not calculate indicators for {ticker_symbol}")
         return None
 
     # Setup plot style and figure
     sns.set_style(theme)
     sns.set_palette(color_palette)
-    fig = plt.figure(figsize=(14, 12), dpi=100)
-    gs = GridSpec(3, 1, height_ratios=[2, 1, 1], figure=fig, hspace=0.15)
+    fig = plt.figure(figsize=(14, 14), dpi=100)  # Increased figure height to accommodate OBV panel
+    gs = GridSpec(4, 1, height_ratios=[2, 1, 1, 1], figure=fig, hspace=0.15)  # Added 4th panel for OBV
 
-    # Get signals for both indicators
+    # Get signals for indicators
     macd_crossovers = get_macd_crossovers(macd_data)
 
     rsi_signals = get_rsi_signals(
@@ -96,6 +101,9 @@ def plot_indicators(
     )
     buy_signals = [(s["date"], s["price"]) for s in rsi_signals if s["type"] == "buy"]
     sell_signals = [(s["date"], s["price"]) for s in rsi_signals if s["type"] == "sell"]
+    
+    # Get OBV signal
+    latest_obv_signal = get_latest_obv_signal(ticker_symbol, obv_window, db_name, days)
 
     # ========== PRICE CHART (TOP PANEL) ==========
     ax1 = fig.add_subplot(gs[0])
@@ -215,7 +223,7 @@ def plot_indicators(
 
     # Setup price chart formatting
     ax1.set_title(
-        f"{ticker_symbol} Price with MACD and RSI ({days} days)",
+        f"{ticker_symbol} Price with Technical Indicators ({days} days)",
         fontsize=16,
         fontweight="bold",
         pad=15,
@@ -327,7 +335,7 @@ def plot_indicators(
         ),
     )
 
-    # ========== RSI CHART (BOTTOM PANEL) ==========
+    # ========== RSI CHART (THIRD PANEL) ==========
     ax3 = fig.add_subplot(gs[2], sharex=ax1)
 
     # Plot RSI line
@@ -420,20 +428,103 @@ def plot_indicators(
         ),
     )
 
+    # ========== OBV CHART (BOTTOM PANEL) ==========
+    ax4 = fig.add_subplot(gs[3], sharex=ax1)
+    
+    # Calculate OBV moving average for smoother visualization
+    obv_ma = obv_data.rolling(window=obv_window).mean()
+    
+    # Plot OBV line
+    sns.lineplot(
+        x=obv_data.index,
+        y=obv_data,
+        color="#ff7f0e",  # Orange color for OBV
+        linewidth=1.8,
+        label="OBV",
+        ax=ax4,
+    )
+    
+    # Plot OBV moving average
+    sns.lineplot(
+        x=obv_ma.index,
+        y=obv_ma,
+        color="#9467bd",  # Purple for MA
+        linewidth=1.5,
+        linestyle="--",
+        label=f"OBV MA ({obv_window})",
+        ax=ax4,
+    )
+    
+    # Add horizontal line at zero
+    ax4.axhline(y=0, color="black", linestyle="-", alpha=0.3, linewidth=1)
+    
+    # Setup OBV chart formatting
+    ax4.set_ylabel("OBV", fontsize=12, fontweight="bold")
+    ax4.legend(
+        loc="upper left", frameon=True, facecolor="white", framealpha=0.8, fontsize=9
+    )
+    ax4.grid(True, alpha=0.3)
+    
+    # Add OBV info text
+    ax4.annotate(
+        f"Window: {obv_window} (for Moving Average)",
+        xy=(0.02, 0.02),
+        xycoords="axes fraction",
+        fontsize=9,
+        va="bottom",
+        ha="left",
+        bbox=dict(
+            boxstyle="round,pad=0.4",
+            facecolor="white",
+            alpha=0.8,
+            edgecolor="gray",
+            linewidth=0.5,
+        ),
+    )
+    
+    # Add OBV stats
+    current_obv = obv_data.iloc[-1] if not obv_data.empty else 0
+    obv_change = (current_obv - obv_data.iloc[-6]) / abs(obv_data.iloc[-6]) * 100 if len(obv_data) >= 6 else 0
+    
+    obv_stats = f"Current OBV: {current_obv:,.0f}\n"
+    obv_stats += f"5-day change: {obv_change:.2f}%"
+    
+    if latest_obv_signal:
+        days_ago = (datetime.now().date() - latest_obv_signal["date"].date()).days
+        obv_stats += f"\nLatest: {latest_obv_signal['type'].capitalize()} ({days_ago} days ago)"
+    
+    ax4.annotate(
+        obv_stats,
+        xy=(0.98, 0.02),
+        xycoords="axes fraction",
+        fontsize=9,
+        va="bottom",
+        ha="right",
+        bbox=dict(
+            boxstyle="round,pad=0.4",
+            facecolor="white",
+            alpha=0.8,
+            edgecolor="gray",
+            linewidth=0.5,
+        ),
+    )
+
     # ========== FINAL FORMATTING ==========
     # Format date ticks
     ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d"))
     ax1.xaxis.set_major_locator(mdates.MonthLocator())
 
-    # Hide x tick labels for top 2 panels
+    # Hide x tick labels for top 3 panels
     ax1.set_xlabel("")
     ax2.set_xlabel("")
+    ax3.set_xlabel("")
     ax1.tick_params(axis="x", labelsize=0)  # Hide tick labels for price chart
     ax2.tick_params(axis="x", labelsize=0)  # Hide tick labels for MACD chart
+    ax3.tick_params(axis="x", labelsize=0)  # Hide tick labels for RSI chart
 
     # Configure bottom x-axis
-    ax3.set_xlabel("Date", fontsize=12, fontweight="bold")
-    plt.setp(ax3.xaxis.get_majorticklabels(), rotation=45, ha="right")
+    ax4.set_xlabel("Date", fontsize=12, fontweight="bold")  # OBV panel now has x-axis labels
+    plt.setp(ax4.xaxis.get_majorticklabels(), rotation=45, ha="right")
 
     # Add timestamp
     fig.text(
@@ -497,6 +588,23 @@ def main(ticker):
             )
         else:
             print("No recent RSI signals")
+    
+    # Get OBV data
+    _, obv_data = calculate_ticker_obv(ticker)
+    if obv_data is not None:
+        print("\nOBV values (recent):")
+        print(obv_data.tail(3))
+        
+        # Show latest OBV signal
+        latest_obv = get_latest_obv_signal(ticker)
+        if latest_obv:
+            print(
+                f"Latest signal: {latest_obv['type'].upper()} on "
+                f"{latest_obv['date'].strftime('%Y-%m-%d')} "
+                f"(OBV: {latest_obv['obv']:,.0f})"
+            )
+        else:
+            print("No recent OBV signals")
 
     # Plot the combined chart
     print(f"\nGenerating technical chart for {ticker}...")

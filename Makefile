@@ -19,6 +19,10 @@ technical_graphs:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
 	uv run python src/technical_graphs.py $(ticker)
 
+options_analysis:
+	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
+	uv run python src/options_analysis.py $(ticker)
+
 combined_signals:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
 	$(if $(ticker),\

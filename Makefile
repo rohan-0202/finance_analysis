@@ -1,4 +1,4 @@
-.PHONY: lint format get_data get_data_for_ticker technical_graphs
+.PHONY: lint format get_data get_data_for_ticker technical_graphs news_analysis
 
 # Targets for linting and formatting Python code using Ruff
 
@@ -22,6 +22,10 @@ technical_graphs:
 options_analysis:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
 	uv run python src/options_analysis.py $(ticker)
+
+news_analysis:
+	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
+	uv run python -m src.agent.finance_news_agent ticker $(ticker)
 
 combined_signals:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))

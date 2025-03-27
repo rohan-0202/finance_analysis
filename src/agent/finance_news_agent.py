@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 import requests
 from tqdm import tqdm
+import click
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -29,10 +34,10 @@ class FinanceNewsAgent:
     
     def __init__(
         self, 
-        tickers_file: str = "nyse_tickers.txt",
-        lmstudio_url: str = "http://10.0.0.22:1234/v1",
-        finnhub_key: str = "cviri41r01qult92h1pgcviri41r01qult92h1q0",
-        days_lookback: int = 14  # Increased from 7 to 14 to get more historical data
+        tickers_file: str = os.getenv("TICKERS_FILE", "nyse_tickers.txt"),
+        lmstudio_url: str = os.getenv("LMSTUDIO_URL", "http://10.0.0.22:1234/v1"),
+        finnhub_key: str = os.getenv("FINNHUB_API_KEY", ""),
+        days_lookback: int = int(os.getenv("DAYS_LOOKBACK", "14"))
     ):
         """
         Initialize the Finance News Agent.
@@ -599,17 +604,111 @@ Format your response as JSON with the following structure:
 
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Finance News Agent")
-    parser.add_argument("--tickers-file", default="nyse_tickers.txt", help="Path to file with ticker symbols")
-    parser.add_argument("--output-file", default="finance_news_results.json", help="Path to save results")
-    
-    args = parser.parse_args()
-    
-    agent = FinanceNewsAgent(
-        tickers_file=args.tickers_file
+    @click.group()
+    def cli():
+        """Finance News Agent - Analyze financial news for stocks."""
+        pass
+        
+    @cli.command("all")
+    @click.option(
+        "--tickers-file", 
+        default=os.getenv("TICKERS_FILE", "nyse_tickers.txt"),
+        help="Path to file with ticker symbols",
+        show_default=True
     )
+    @click.option(
+        "--output-file", 
+        default="finance_news_results.json",
+        help="Path to save results",
+        show_default=True
+    )
+    def analyze_all_tickers(tickers_file, output_file):
+        """Analyze news for all tickers in the tickers file."""
+        click.echo(f"Using tickers file: {tickers_file}")
+        
+        agent = FinanceNewsAgent(tickers_file=tickers_file)
+        results = agent.run(output_file=output_file)
+        
+        click.echo(f"Processed {len(results)} tickers. Results saved to {output_file}")
     
-    results = agent.run(output_file=args.output_file)
-    print(f"Processed {len(results)} tickers. Results saved to {args.output_file}") 
+    @cli.command("ticker")
+    @click.argument("ticker")
+    @click.option(
+        "--tickers-file", 
+        default=os.getenv("TICKERS_FILE", "nyse_tickers.txt"),
+        help="Path to file with ticker symbols",
+        show_default=True
+    )
+    @click.option(
+        "--output-file", 
+        help="Optional path to save results",
+        default=None
+    )
+    @click.option(
+        "--use-mock-data/--no-mock-data",
+        default=False,
+        help="Use mock data for testing without API access"
+    )
+    def analyze_single_ticker(ticker, tickers_file, output_file, use_mock_data):
+        """Analyze news for a single ticker symbol."""
+        ticker = ticker.upper()  # Convert to uppercase
+        
+        click.echo(f"Analyzing news and financial data for {ticker}...")
+        
+        agent = FinanceNewsAgent(tickers_file=tickers_file)
+        
+        if use_mock_data:
+            # This would require implementing mock data generation in this file
+            click.echo("Mock data generation not implemented in this script.")
+            click.echo("Please use the example_usage.py script for mock data.")
+            return
+            
+        result = agent.process_ticker(ticker)
+        
+        # Display results
+        click.echo("\n===== ANALYSIS RESULTS =====\n")
+        click.echo(f"Ticker: {result.get('ticker')}")
+        click.echo(f"Summary: {result.get('summary')}")
+        
+        if 'key_points' in result:
+            click.echo("\nKey Points:")
+            for point in result.get('key_points', []):
+                click.echo(f"- {point}")
+        
+        if 'financial_implications' in result:
+            click.echo(f"\nFinancial Implications: {result.get('financial_implications')}")
+        
+        if 'short_term_outlook' in result:
+            click.echo(f"\nShort Term Outlook (1-3 months): {result.get('short_term_outlook')}")
+            
+        if 'medium_term_outlook' in result:
+            click.echo(f"\nMedium Term Outlook (6-12 months): {result.get('medium_term_outlook')}")
+        
+        if 'sentiment' in result:
+            click.echo(f"\nSentiment: {result.get('sentiment')}")
+            if 'sentiment_reasoning' in result:
+                click.echo(f"Reasoning: {result.get('sentiment_reasoning')}")
+            click.echo(f"Confidence: {result.get('confidence')}")
+        
+        if 'risk_factors' in result:
+            click.echo("\nRisk Factors:")
+            for risk in result.get('risk_factors', []):
+                click.echo(f"- {risk}")
+        
+        if 'catalysts' in result:
+            click.echo("\nPotential Catalysts:")
+            for catalyst in result.get('catalysts', []):
+                click.echo(f"- {catalyst}")
+        
+        # Save the full results to a JSON file if output_file specified
+        if output_file:
+            output_path = Path(output_file)
+        else:
+            output_path = Path(f"{ticker}_analysis.json")
+            
+        with open(output_path, "w") as f:
+            json.dump(result, f, indent=2)
+        
+        click.echo(f"\nFull results saved to {output_path}")
+    
+    cli() 

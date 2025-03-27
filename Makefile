@@ -19,6 +19,12 @@ technical_graphs:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
 	uv run python src/technical_graphs.py $(ticker)
 
+combined_signals:
+	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
+	$(if $(ticker),\
+		uv run python src/combined_signals.py -t $(ticker),\
+		uv run python src/combined_signals.py)
+
 format:
 	uv run ruff format . 
 	uv run isort .

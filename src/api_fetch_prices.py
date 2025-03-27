@@ -2,7 +2,6 @@
 import json
 import sys
 import os
-from datetime import datetime
 from db_util import get_historical_data
 
 def get_price_data_for_api(ticker_symbol="SPY", days=365):

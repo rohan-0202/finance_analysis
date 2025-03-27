@@ -2,7 +2,6 @@ import warnings
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
 from db_util import get_historical_data

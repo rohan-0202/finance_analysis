@@ -7,13 +7,12 @@ insights and summarize key information.
 """
 
 import os
-import sys
 import json
 import logging
 import re  # Added for regex parsing of JSON
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 import requests
 from tqdm import tqdm
 import click
@@ -167,7 +166,7 @@ class FinanceNewsAgent:
         
         # Company profile
         try:
-            profile_url = f"https://finnhub.io/api/v1/stock/profile2"
+            profile_url = "https://finnhub.io/api/v1/stock/profile2"
             params = {"symbol": ticker}
             response = requests.get(profile_url, params=params, headers=headers)
             if response.status_code == 200 and response.json():
@@ -178,7 +177,7 @@ class FinanceNewsAgent:
         
         # Quote data
         try:
-            quote_url = f"https://finnhub.io/api/v1/quote"
+            quote_url = "https://finnhub.io/api/v1/quote"
             params = {"symbol": ticker}
             response = requests.get(quote_url, params=params, headers=headers)
             if response.status_code == 200 and response.json():
@@ -189,7 +188,7 @@ class FinanceNewsAgent:
         
         # Recommendation trends
         try:
-            rec_url = f"https://finnhub.io/api/v1/stock/recommendation"
+            rec_url = "https://finnhub.io/api/v1/stock/recommendation"
             params = {"symbol": ticker}
             response = requests.get(rec_url, params=params, headers=headers)
             if response.status_code == 200 and response.json():
@@ -200,7 +199,7 @@ class FinanceNewsAgent:
         
         # Earnings surprises
         try:
-            earnings_url = f"https://finnhub.io/api/v1/stock/earnings"
+            earnings_url = "https://finnhub.io/api/v1/stock/earnings"
             params = {"symbol": ticker}
             response = requests.get(earnings_url, params=params, headers=headers)
             if response.status_code == 200 and response.json():
@@ -211,7 +210,7 @@ class FinanceNewsAgent:
         
         # Social sentiment
         try:
-            sentiment_url = f"https://finnhub.io/api/v1/stock/social-sentiment"
+            sentiment_url = "https://finnhub.io/api/v1/stock/social-sentiment"
             params = {"symbol": ticker, "from": (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")}
             response = requests.get(sentiment_url, params=params, headers=headers)
             if response.status_code == 200 and response.json():

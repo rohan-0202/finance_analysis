@@ -6,9 +6,10 @@ from typing import Dict, List
 # Add the src directory to the path if needed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import the relevant functions from the RSI and MACD modules
+# Import the relevant functions from the RSI, MACD, and OBV modules
 from rsi import get_latest_rsi_signal
 from macd import get_latest_macd_signal
+from obv import get_latest_obv_signal
 
 
 def get_combined_buy_signals(
@@ -19,7 +20,7 @@ def get_combined_buy_signals(
 ) -> List[Dict[str, any]]:
     """
     Analyze all tickers from the provided file and return those
-    that have both MACD and RSI "buy" signals as their most recent signals.
+    that have buy signals from all three indicators (MACD, RSI, OBV).
 
     Parameters:
     -----------
@@ -34,7 +35,7 @@ def get_combined_buy_signals(
 
     Returns:
     --------
-    List[Dict[str, any]]: A list of dictionaries containing tickers with buy signals from both indicators
+    List[Dict[str, any]]: A list of dictionaries containing tickers with buy signals from all three indicators
     """
     # Read ticker symbols from file
     try:
@@ -45,20 +46,18 @@ def get_combined_buy_signals(
         return []
 
     if verbose:
-        print(f"Analyzing {len(tickers)} tickers for combined MACD and RSI signals...")
+        print(f"Analyzing {len(tickers)} tickers for combined MACD, RSI, and OBV signals...")
 
     # Lists to store results
     combined_buy_signals = []
-    macd_buy_only = []
-    rsi_buy_only = []
-    no_buy_signals = []
     error_tickers = []
 
     # Track counts for summary
     total_processed = 0
     total_with_macd_buy = 0
     total_with_rsi_buy = 0
-    total_with_both = 0
+    total_with_obv_buy = 0
+    total_with_all_three = 0
 
     # Process each ticker
     for i, ticker in enumerate(tickers):
@@ -69,24 +68,34 @@ def get_combined_buy_signals(
             # Get latest signals
             latest_macd_signal = get_latest_macd_signal(ticker, db_name=db_name, days=days)
             latest_rsi_signal = get_latest_rsi_signal(ticker, db_name=db_name, days=days)
+            latest_obv_signal = get_latest_obv_signal(ticker, db_name=db_name, days=days)
 
             # Track whether we have buy signals from each indicator
             has_macd_buy = latest_macd_signal and latest_macd_signal["type"].lower() == "buy"
             has_rsi_buy = latest_rsi_signal and latest_rsi_signal["type"].lower() == "buy"
+            has_obv_buy = latest_obv_signal and latest_obv_signal["type"].lower() == "buy"
 
             # Update counts
             if has_macd_buy:
                 total_with_macd_buy += 1
             if has_rsi_buy:
                 total_with_rsi_buy += 1
+            if has_obv_buy:
+                total_with_obv_buy += 1
 
-            # Store tickers based on signal results
-            if has_macd_buy and has_rsi_buy:
+            # Only include tickers with all three buy signals
+            if has_macd_buy and has_rsi_buy and has_obv_buy:
+                total_with_all_three += 1
+                
                 # Calculate days ago for each signal
                 macd_days_ago = (datetime.now().date() - latest_macd_signal["date"].date()).days
                 rsi_days_ago = (datetime.now().date() - latest_rsi_signal["date"].date()).days
-
-                combined_buy_signals.append({
+                obv_days_ago = (datetime.now().date() - latest_obv_signal["date"].date()).days
+                
+                # Calculate the total days for sorting
+                total_days_ago = macd_days_ago + rsi_days_ago + obv_days_ago
+                
+                signal_data = {
                     "ticker": ticker,
                     "macd_signal_date": latest_macd_signal["date"],
                     "macd_days_ago": macd_days_ago,
@@ -94,24 +103,15 @@ def get_combined_buy_signals(
                     "rsi_signal_date": latest_rsi_signal["date"],
                     "rsi_days_ago": rsi_days_ago,
                     "rsi_price": latest_rsi_signal["price"],
-                    "rsi_value": latest_rsi_signal["rsi"]
-                })
-                total_with_both += 1
-            elif has_macd_buy:
-                macd_days_ago = (datetime.now().date() - latest_macd_signal["date"].date()).days
-                macd_buy_only.append({
-                    "ticker": ticker, 
-                    "days_ago": macd_days_ago
-                })
-            elif has_rsi_buy:
-                rsi_days_ago = (datetime.now().date() - latest_rsi_signal["date"].date()).days
-                rsi_buy_only.append({
-                    "ticker": ticker, 
-                    "days_ago": rsi_days_ago,
-                    "rsi_value": latest_rsi_signal["rsi"]
-                })
-            else:
-                no_buy_signals.append(ticker)
+                    "rsi_value": latest_rsi_signal["rsi"],
+                    "obv_signal_date": latest_obv_signal["date"],
+                    "obv_days_ago": obv_days_ago,
+                    "obv_price": latest_obv_signal["price"],
+                    "obv_value": latest_obv_signal["obv"],
+                    "total_days_ago": total_days_ago,
+                }
+                
+                combined_buy_signals.append(signal_data)
 
             total_processed += 1
 
@@ -120,8 +120,8 @@ def get_combined_buy_signals(
             if verbose:
                 print(f"Error processing {ticker}: {e}")
 
-    # Sort results by most recent combined signals first
-    combined_buy_signals.sort(key=lambda x: min(x["macd_days_ago"], x["rsi_days_ago"]))
+    # Sort results by total days ago (most recent combined signals first)
+    combined_buy_signals.sort(key=lambda x: x["total_days_ago"])
 
     # Print summary if verbose
     if verbose:
@@ -129,14 +129,18 @@ def get_combined_buy_signals(
         print(f"Total tickers processed: {total_processed}")
         print(f"Tickers with MACD buy signals: {total_with_macd_buy}")
         print(f"Tickers with RSI buy signals: {total_with_rsi_buy}")
-        print(f"Tickers with BOTH MACD and RSI buy signals: {total_with_both}")
+        print(f"Tickers with OBV buy signals: {total_with_obv_buy}")
+        print(f"Tickers with all three buy signals: {total_with_all_three}")
         print(f"Tickers with errors during processing: {len(error_tickers)}")
 
         if combined_buy_signals:
-            print("\n--- TICKERS WITH BOTH MACD AND RSI BUY SIGNALS ---")
+            print("\n--- TICKERS WITH ALL THREE BUY SIGNALS (SORTED BY TOTAL RECENCY) ---")
             for signal in combined_buy_signals:
-                print(f"{signal['ticker']}: MACD {signal['macd_days_ago']} days ago, "
-                      f"RSI {signal['rsi_days_ago']} days ago (RSI value: {signal['rsi_value']:.2f})")
+                print(f"{signal['ticker']}: " 
+                      f"MACD {signal['macd_days_ago']} days ago, "
+                      f"RSI {signal['rsi_days_ago']} days ago (value: {signal['rsi_value']:.2f}), "
+                      f"OBV {signal['obv_days_ago']} days ago "
+                      f"(Total: {signal['total_days_ago']} days)")
 
         if error_tickers and verbose:
             print("\n--- ERROR TICKERS ---")
@@ -150,7 +154,7 @@ def get_combined_buy_signals(
 
 def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int = 365):
     """
-    Print detailed analysis for a specific ticker including both MACD and RSI information.
+    Print detailed analysis for a specific ticker including MACD, RSI, and OBV information.
     
     Parameters:
     -----------
@@ -163,6 +167,7 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
     """
     from macd import calculate_macd
     from rsi import calculate_ticker_rsi
+    from obv import calculate_ticker_obv, get_obv_status_text
     
     print(f"\n=== DETAILED ANALYSIS FOR {ticker} ===")
     
@@ -174,6 +179,10 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
         # Get RSI data
         price_data_rsi, rsi_data = calculate_ticker_rsi(ticker, db_name=db_name, days=days)
         latest_rsi_signal = get_latest_rsi_signal(ticker, db_name=db_name, days=days)
+        
+        # Get OBV data
+        price_data_obv, obv_data = calculate_ticker_obv(ticker, db_name=db_name, days=days)
+        latest_obv_signal = get_latest_obv_signal(ticker, db_name=db_name, days=days)
         
         # Print MACD info
         print("\nMACD INFORMATION:")
@@ -216,19 +225,48 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
         else:
             print("Could not calculate RSI data")
             
+        # Print OBV info
+        print("\nOBV INFORMATION:")
+        if obv_data is not None:
+            current_obv = obv_data.iloc[-1]
+            print(f"Current OBV: {current_obv:,.0f}")
+            
+            # Get OBV status text
+            if price_data_obv is not None:
+                obv_status = get_obv_status_text(price_data_obv, obv_data)
+                print(f"Status: {obv_status.split('\n')[1]}")  # Just the status part
+                
+            if latest_obv_signal:
+                days_ago = (datetime.now().date() - latest_obv_signal["date"].date()).days
+                print(f"\nLatest OBV signal: {latest_obv_signal['type'].upper()} ({days_ago} days ago)")
+                print(f"OBV at signal: {latest_obv_signal['obv']:,.0f}")
+                print(f"Price at signal: ${latest_obv_signal['price']:.2f}")
+            else:
+                print("\nNo recent OBV divergence signals")
+        else:
+            print("Could not calculate OBV data")
+            
         # Conclusion
         print("\nCOMBINED ANALYSIS:")
         has_macd_buy = latest_macd_signal and latest_macd_signal["type"].lower() == "buy"
         has_rsi_buy = latest_rsi_signal and latest_rsi_signal["type"].lower() == "buy"
+        has_obv_buy = latest_obv_signal and latest_obv_signal["type"].lower() == "buy"
         
-        if has_macd_buy and has_rsi_buy:
-            print("STRONG BUY SIGNAL - Both MACD and RSI indicate buying opportunity")
-        elif has_macd_buy:
-            print("MODERATE BUY SIGNAL - MACD indicates buying opportunity but RSI does not confirm")
-        elif has_rsi_buy:
-            print("MODERATE BUY SIGNAL - RSI indicates buying opportunity but MACD does not confirm")
+        buy_count = sum([has_macd_buy, has_rsi_buy, has_obv_buy])
+        
+        if buy_count == 3:
+            print("STRONG BUY SIGNAL - All three indicators (MACD, RSI, OBV) indicate buying opportunity")
+        elif buy_count == 2:
+            indicators = []
+            if has_macd_buy: indicators.append("MACD")
+            if has_rsi_buy: indicators.append("RSI")
+            if has_obv_buy: indicators.append("OBV")
+            print(f"MODERATE BUY SIGNAL - Two indicators ({' and '.join(indicators)}) indicate buying opportunity")
+        elif buy_count == 1:
+            indicator = "MACD" if has_macd_buy else "RSI" if has_rsi_buy else "OBV"
+            print(f"WEAK BUY SIGNAL - Only {indicator} indicates buying opportunity")
         else:
-            print("NO BUY SIGNALS - Neither MACD nor RSI indicate buying opportunity")
+            print("NO BUY SIGNALS - None of the indicators show buying opportunity")
             
     except Exception as e:
         print(f"Error analyzing {ticker}: {e}")
@@ -237,7 +275,7 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Analyze stocks for combined MACD and RSI buy signals")
+    parser = argparse.ArgumentParser(description="Analyze stocks for buy signals from all three technical indicators")
     parser.add_argument("-t", "--ticker", help="Analyze a specific ticker")
     parser.add_argument("-d", "--days", type=int, default=365, help="Number of days of historical data to use")
     parser.add_argument("-s", "--silent", action="store_true", help="Run in silent mode (no progress updates)")
@@ -248,12 +286,7 @@ if __name__ == "__main__":
         print_ticker_details(args.ticker.upper(), days=args.days)
     else:
         # Get combined buy signals for all tickers
-        combined_signals = get_combined_buy_signals(days=args.days, verbose=not args.silent)
-        
-        # Print a list of tickers with both signals
-        if combined_signals:
-            print("\nTickers with both MACD and RSI buy signals:")
-            for signal in combined_signals:
-                print(f"{signal['ticker']}")
-        else:
-            print("\nNo tickers found with both MACD and RSI buy signals") 
+        get_combined_buy_signals(
+            days=args.days, 
+            verbose=not args.silent
+        )

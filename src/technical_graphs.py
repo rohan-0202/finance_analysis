@@ -13,7 +13,7 @@ from matplotlib.gridspec import GridSpec
 from macd import (calculate_macd, get_latest_macd_signal, get_macd_crossovers,
                   get_signal_stats_text)
 from rsi import calculate_ticker_rsi, get_latest_rsi_signal, get_rsi_signals
-from obv import calculate_ticker_obv, get_latest_obv_signal, get_obv_status_text
+from obv import calculate_ticker_obv, get_latest_obv_signal
 
 # Suppress pandas warnings
 warnings.filterwarnings("ignore", category=FutureWarning)

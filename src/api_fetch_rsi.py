@@ -2,7 +2,6 @@
 import json
 import sys
 import os
-from datetime import datetime
 from rsi import calculate_ticker_rsi
 
 def get_rsi_data_for_api(ticker_symbol="SPY", days=180):

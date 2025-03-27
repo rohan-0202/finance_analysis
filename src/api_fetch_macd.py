@@ -2,7 +2,6 @@
 import json
 import sys
 import os
-from datetime import datetime
 from macd import calculate_macd
 
 def get_macd_data_for_api(ticker_symbol="SPY", days=180):

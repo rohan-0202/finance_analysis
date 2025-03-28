@@ -1,18 +1,21 @@
 import click
 
 from db_util import get_options_data
+from options.implied_volatility import analyze_implied_volatility
 from options.open_interest import analyze_open_interest_changes
 from options.put_call import calculate_put_call_ratio
 from options.unusual_activity import analyze_unusual_activity
 
 
-def generate_trading_signal(unusual_activity, significant_oi, pc_ratio):
+def generate_trading_signal(
+    unusual_activity, significant_oi, pc_ratio, iv_analysis=None
+):
     """Generate a trading signal (BUY, SELL, or HOLD) based on options analysis results.
 
     This function implements a multi-factor scoring algorithm that weighs various
     options market indicators to produce an actionable trading signal. The algorithm
     combines sentiment indicators from put/call ratios, unusual activity patterns,
-    and institutional positioning through open interest analysis.
+    institutional positioning through open interest analysis, and implied volatility metrics.
 
     Algorithm Logic:
     ---------------
@@ -37,7 +40,15 @@ def generate_trading_signal(unusual_activity, significant_oi, pc_ratio):
        - Extreme ratios (>2.0) may be interpreted as contrarian signals (+20 points)
        - Open interest put/call ratio serves as a secondary confirmation
 
-    5. Signal Determination:
+    5. Implied Volatility Analysis:
+       - IV Percentile/Rank: High IV (>80%) subtracts -10 to -15 points (bearish)
+       - IV Percentile/Rank: Low IV (<20%) adds +10 to +15 points (bullish)
+       - Volatility Skew: High put-call skew subtracts -15 to -25 points (bearish)
+       - Volatility Skew: Negative skew adds +15 to +25 points (bullish)
+       - IV Run-up: Significant IV increases modify score based on other indicators
+       - IV Term Structure: Inverted term structure adds signal confidence modifier
+
+    6. Signal Determination:
        - Final score > 40: BUY signal
        - Final score < -40: SELL signal
        - Otherwise: HOLD signal
@@ -52,6 +63,9 @@ def generate_trading_signal(unusual_activity, significant_oi, pc_ratio):
 
     pc_ratio : dict
         Dictionary containing put/call ratio data as returned by calculate_put_call_ratio()
+
+    iv_analysis : dict, optional
+        Dictionary containing implied volatility analysis results as returned by analyze_implied_volatility()
 
     Returns:
     -------
@@ -232,6 +246,111 @@ def generate_trading_signal(unusual_activity, significant_oi, pc_ratio):
         factors["put_call_ratio"] = 0
         factors["oi_confirmation"] = 0
 
+    # 4. Analyze implied volatility (if available)
+    if iv_analysis is not None:
+        # 4.1 IV Percentile/Rank
+        if iv_analysis["iv_percentile"] is not None:
+            iv_percentile = iv_analysis["iv_percentile"]
+            if iv_percentile > 80:
+                iv_percentile_score = (
+                    -15
+                )  # High IV is generally bearish (expensive options)
+                explanation.append(
+                    f"High implied volatility (percentile: {iv_percentile:.1f}) suggests expensive options and potential overreaction"
+                )
+                score += iv_percentile_score
+                factors["iv_percentile"] = iv_percentile_score
+            elif iv_percentile < 20:
+                iv_percentile_score = 15  # Low IV is generally bullish (cheap options)
+                explanation.append(
+                    f"Low implied volatility (percentile: {iv_percentile:.1f}) suggests cheap options and potential complacency"
+                )
+                score += iv_percentile_score
+                factors["iv_percentile"] = iv_percentile_score
+            else:
+                factors["iv_percentile"] = 0
+        else:
+            factors["iv_percentile"] = 0
+
+        # 4.2 Volatility Skew
+        if iv_analysis["skew"] and iv_analysis["skew"]["current_skew"] is not None:
+            skew_value = iv_analysis["skew"]["current_skew"]
+            if skew_value > 0.1:
+                skew_score = (
+                    -25 if skew_value > 0.2 else -15
+                )  # High put-call skew is bearish
+                explanation.append(
+                    f"High put-call skew ({skew_value:.2f}) indicates strong demand for downside protection"
+                )
+                score += skew_score
+                factors["volatility_skew"] = skew_score
+            elif skew_value < -0.1:
+                skew_score = 25 if skew_value < -0.2 else 15  # Negative skew is bullish
+                explanation.append(
+                    f"Negative volatility skew ({skew_value:.2f}) indicates higher call IV than puts - bullish sentiment"
+                )
+                score += skew_score
+                factors["volatility_skew"] = skew_score
+            else:
+                factors["volatility_skew"] = 0
+        else:
+            factors["volatility_skew"] = 0
+
+        # 4.3 IV Run-up Detection
+        if iv_analysis["iv_run_up"] and iv_analysis["iv_run_up"]["detected"]:
+            magnitude = iv_analysis["iv_run_up"]["magnitude"]
+            # IV run-up modifies existing signals rather than providing a direct signal
+            # Positive score means bullish, so we amplify that effect
+            if score > 20:  # If already bullish
+                runup_score = 15  # Amplify bullish signal
+                explanation.append(
+                    f"IV run-up ({magnitude:.1f}%) combined with bullish indicators suggests strong upcoming price movement"
+                )
+            elif score < -20:  # If already bearish
+                runup_score = -15  # Amplify bearish signal
+                explanation.append(
+                    f"IV run-up ({magnitude:.1f}%) combined with bearish indicators suggests strong upcoming price movement"
+                )
+            else:
+                runup_score = 0  # Neutral if overall sentiment is unclear
+                explanation.append(
+                    f"IV run-up ({magnitude:.1f}%) detected - potential upcoming catalyst"
+                )
+
+            score += runup_score
+            factors["iv_run_up"] = runup_score
+        else:
+            factors["iv_run_up"] = 0
+
+        # 4.4 IV Term Structure
+        if (
+            iv_analysis["term_structure"]
+            and iv_analysis["term_structure"]["curve_type"] is not None
+        ):
+            curve_type = iv_analysis["term_structure"]["curve_type"]
+            if curve_type == "inverted":
+                # Inverted term structure suggests expectation of near-term volatility
+                # This is a confidence modifier more than a direct signal
+                if score > 20:  # If already bullish
+                    term_score = 10  # Stronger conviction in bullish move
+                    explanation.append(
+                        "Inverted IV term structure suggests expected near-term volatility, strengthening bullish conviction"
+                    )
+                elif score < -20:  # If already bearish
+                    term_score = -10  # Stronger conviction in bearish move
+                    explanation.append(
+                        "Inverted IV term structure suggests expected near-term volatility, strengthening bearish conviction"
+                    )
+                else:
+                    term_score = 0
+
+                score += term_score
+                factors["iv_term_structure"] = term_score
+            else:
+                factors["iv_term_structure"] = 0
+        else:
+            factors["iv_term_structure"] = 0
+
     # Ensure score stays within bounds
     score = max(-100, min(100, score))
 
@@ -320,9 +439,64 @@ def main(ticker):
     else:
         print("Insufficient data to calculate put/call ratios")
 
+    # Analyze implied volatility
+    print("\n--- IMPLIED VOLATILITY ANALYSIS ---")
+    iv_analysis = analyze_implied_volatility(options_data, ticker)
+
+    # Display IV percentile and rank
+    if iv_analysis["iv_percentile"] is not None:
+        print(f"IV Percentile: {iv_analysis['iv_percentile']:.1f}")
+        print(f"IV Rank: {iv_analysis['iv_rank']:.1f}")
+
+        # Provide interpretation
+        if iv_analysis["iv_percentile"] > 80:
+            print("SIGNAL: IV is relatively high - options are expensive")
+        elif iv_analysis["iv_percentile"] < 20:
+            print("SIGNAL: IV is relatively low - options are cheap")
+    else:
+        print("Insufficient data to calculate IV percentile/rank")
+
+    # Display volatility skew information
+    if iv_analysis["skew"] and iv_analysis["skew"]["current_skew"] is not None:
+        print(f"\nVolatility Skew: {iv_analysis['skew']['current_skew']:.2f}")
+        print(f"Skew Signal: {iv_analysis['skew']['skew_signal']}")
+    else:
+        print("\nInsufficient data to analyze volatility skew")
+
+    # Display term structure information
+    if (
+        iv_analysis["term_structure"]
+        and iv_analysis["term_structure"]["curve_type"] is not None
+    ):
+        print(f"\nIV Term Structure: {iv_analysis['term_structure']['curve_type']}")
+        print(
+            f"Term Structure Signal: {iv_analysis['term_structure']['term_structure_signal']}"
+        )
+    else:
+        print("\nInsufficient data to analyze IV term structure")
+
+    # Display IV run-up information
+    if iv_analysis["iv_run_up"] and iv_analysis["iv_run_up"]["detected"]:
+        print(
+            f"\nIV Run-up Detected: {iv_analysis['iv_run_up']['magnitude']:.1f}% increase"
+        )
+        print(f"Run-up Signal: {iv_analysis['iv_run_up']['run_up_signal']}")
+    else:
+        print("\nNo significant IV run-up detected")
+
+    # Display IV-based trading signals
+    if iv_analysis["iv_signals"]:
+        print("\nIV-Based Trading Signals:")
+        for signal in iv_analysis["iv_signals"]:
+            print(
+                f"- {signal['signal']} (Type: {signal['type']}, Strength: {signal['strength']}/5)"
+            )
+
     # Generate overall trading signal
     print("\n--- TRADING SIGNAL ---")
-    signal_result = generate_trading_signal(unusual_activity, significant_oi, pc_ratio)
+    signal_result = generate_trading_signal(
+        unusual_activity, significant_oi, pc_ratio, iv_analysis
+    )
 
     print(f"SIGNAL: {signal_result['signal']}")
     print(f"Score: {signal_result['score']}")

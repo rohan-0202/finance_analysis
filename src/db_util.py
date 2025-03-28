@@ -87,7 +87,7 @@ def get_historical_data(
         raise ValueError(f"No historical data found for {ticker_symbol}")
 
     # Parse the timestamp column manually to avoid timezone issues
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
 
     # Set timestamp as index
     df.set_index("timestamp", inplace=True)

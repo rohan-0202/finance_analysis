@@ -24,8 +24,10 @@ options_analysis:
 	uv run python src/options_analysis.py $(ticker)
 
 news_analysis:
-	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
-	uv run python -m src.agent.finance_news_agent ticker $(ticker)
+	$(eval ticker=$(word 2,$(MAKECMDGOALS)))	
+	$(if $(ticker),\
+		uv run python -m src.agent.finance_agent_run ticker $(ticker),\
+		uv run python -m src.agent.finance_agent_run all)
 
 combined_signals:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))

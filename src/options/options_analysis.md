@@ -8,7 +8,7 @@ Options data from yfinance provides a wealth of information that can be used to 
 - **Open Interest Changes**: Significant increases in open interest for specific strikes/expirations
 - **Put/Call Ratio**: High put/call ratio can indicate bearish sentiment (potential contrarian buy signal), while low values may suggest bullish sentiment
 
-## Implied Volatility (IV) Signals
+## Implied Volatility (IV) Signals (done)
 
 - **IV Percentile/Rank**: Compare current IV to its historical range to identify potential mean reversion opportunities. Implied volatility is the volatility value that, when input into an options pricing model (like Black-Scholes), makes the theoretical price match the actual market price of the option. It's "implied" by the options market prices.
 - **Volatility Skew**: Analyze the difference between put and call IV at same distance from the money

@@ -33,6 +33,16 @@ combined_signals:
 		uv run python src/combined_signals.py -t $(ticker),\
 		uv run python src/combined_signals.py)
 
+install_jupyter_kernel:
+	uv run python -m ipykernel install --user --name=finance_analysis_kernel --display-name "finance_analysis_kernel"
+
+uninstall_jupyter_kernel:
+	uv run python -m ipykernel uninstall finance_analysis_kernel
+
+jupyter_notebook:
+	uv run jupyter lab	
+
+
 format:
 	uv run ruff format . 
 	uv run isort .

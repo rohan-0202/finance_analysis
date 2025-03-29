@@ -27,6 +27,7 @@ from backtesting.portfolio import Portfolio
 from backtesting.strategies.df_columns import TICKER, TIMESTAMP
 from backtesting.strategy import Strategy
 from db_util import get_historical_data
+from backtesting.strategies.strategy_factory import StrategyFactory
 
 
 def ensure_utc_tz(dt):
@@ -561,20 +562,65 @@ class Backtest:
 
 
 if __name__ == "__main__":
-    import importlib.util
-    import inspect
     import os
     from datetime import datetime, timedelta
 
     import click
 
-    @click.command()
+    # Read default tickers from nyse_tickers.txt
+    def get_default_tickers():
+        try:
+            # Try different possible locations for the file
+            possible_paths = [
+                "nyse_tickers.txt",
+                os.path.join("src", "nyse_tickers.txt"),
+                os.path.join(os.getcwd(), "nyse_tickers.txt"),
+                os.path.join(os.getcwd(), "src", "nyse_tickers.txt")
+            ]
+            
+            # Try to find and read the file
+            for path in possible_paths:
+                if os.path.exists(path):
+                    with open(path, 'r') as f:
+                        tickers = [line.strip() for line in f if line.strip() and not line.startswith('^')]
+                    print(f"Loaded {len(tickers)} default tickers from {path}")
+                    return tickers
+                    
+            # If file not found, return a small default list
+            print("Warning: nyse_tickers.txt not found. Using minimal default ticker list.")
+            return ["SPY", "AAPL", "MSFT", "GOOGL", "AMZN"]
+            
+        except Exception as e:
+            print(f"Error loading default tickers: {e}")
+            return ["SPY"]  # Fallback to SPY if there's an error
+
+    @click.group()
+    def cli():
+        """Backtest trading strategies with historical data."""
+        pass
+
+    @cli.command()
+    def list_strategies():
+        """List all available strategies."""
+        strategies = StrategyFactory.list_available_strategies()
+        if strategies:
+            print("Available strategies:")
+            for strategy in strategies:
+                print(f"  - {strategy}")
+        else:
+            print("No strategies found.")
+
+    @cli.command()
     @click.option(
         "--strategy",
         required=True,
-        help="Strategy file to use (e.g., 'rsi_strategy.py')",
+        help="Strategy to use (e.g., 'rsi_strategy')",
     )
-    @click.option("--ticker", default="SPY", help="Ticker symbol to backtest")
+    @click.option(
+        "--ticker", 
+        help="Comma-separated list of ticker symbols to backtest (e.g., 'AAPL,MSFT,GOOGL'). "
+             "If not specified, uses all tickers from nyse_tickers.txt"
+    )
     @click.option(
         "--db-name", default="stock_data.db", help="Database name for historical data"
     )
@@ -592,87 +638,52 @@ if __name__ == "__main__":
         help="Commission per trade (as a percentage)",
     )
     @click.option("--plot", is_flag=True, help="Plot the backtest results")
-    def run_backtest(strategy, ticker, db_name, months, start_cash, commission, plot):
+    @click.option(
+        "--benchmark",
+        help="Ticker to use as benchmark (defaults to first ticker)"
+    )
+    def run(strategy, ticker, db_name, months, start_cash, commission, plot, benchmark):
         """Run a strategy backtest with specified parameters."""
 
-        # Dynamically import the strategy class from the specified file
+        # Get the strategy class using the factory
         try:
-            # Clean up the strategy filename input
-            if not strategy.endswith(".py"):
-                strategy += ".py"
-
-            # Construct the path to the strategy file
-            strategies_dir = os.path.join("src", "backtesting", "strategies")
-            if not os.path.exists(strategies_dir):
-                strategies_dir = os.path.join("backtesting", "strategies")
-            if not os.path.exists(strategies_dir):
-                # Try relative to the current directory
-                strategies_dir = os.path.join(
-                    os.getcwd(), "src", "backtesting", "strategies"
-                )
-            if not os.path.exists(strategies_dir):
-                strategies_dir = os.path.join(os.getcwd(), "backtesting", "strategies")
-
-            strategy_path = os.path.join(strategies_dir, strategy)
-
-            if not os.path.exists(strategy_path):
-                print(
-                    f"Error: Strategy file '{strategy}' not found in '{strategies_dir}'"
-                )
-                return
-
-            # Import the module
-            module_name = strategy.replace(".py", "")
-            spec = importlib.util.spec_from_file_location(module_name, strategy_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-
-            # Find the strategy class in the module
-            strategy_class = None
-            for _, obj in inspect.getmembers(module):
-                if (
-                    inspect.isclass(obj)
-                    and issubclass(obj, Strategy)
-                    and obj != Strategy
-                ):
-                    strategy_class = obj
-                    break
-
-            if strategy_class is None:
-                print(f"Error: No Strategy subclass found in '{strategy}'")
-                return
-
+            strategy_class = StrategyFactory.get_strategy_class(strategy)
             print(f"Found strategy class: {strategy_class.__name__}")
-
-        except Exception as e:
-            print(f"Error loading strategy '{strategy}': {e}")
-            import traceback
-
-            traceback.print_exc()
+        except ValueError as e:
+            print(f"Error: {e}")
             return
 
         # Calculate dates - make them timezone-aware (UTC)
         end_date = datetime.now(timezone.utc)
         start_date = end_date - timedelta(days=months * 30)  # Approximate
 
-        print(
-            f"Running {strategy_class.__name__} for {ticker} from {start_date.date()} to {end_date.date()}"
-        )
-
-        # Configure strategy-specific parameters based on strategy class
-        strategy_params = {}
-        if hasattr(strategy_class, "get_default_parameters"):
-            strategy_params = strategy_class.get_default_parameters()
+        # Parse ticker option: either comma-separated list or defaults from file
+        if ticker:
+            # Split comma-separated tickers and strip whitespace
+            ticker_list = [t.strip() for t in ticker.split(',') if t.strip()]
         else:
-            # Use some reasonable defaults for common strategies
-            if "RSI" in strategy_class.__name__:
-                strategy_params = {
-                    "rsi_period": 14,
-                    "overbought_threshold": 70,
-                    "oversold_threshold": 30,
-                    "max_capital_per_position": 0.9,
-                }
-            # Add defaults for other strategy types as needed
+            ticker_list = get_default_tickers()
+        
+        if not ticker_list:
+            print("Error: No tickers specified and no default tickers found")
+            return
+            
+        # Set benchmark ticker to first ticker if not specified
+        benchmark_ticker = benchmark if benchmark else ticker_list[0]
+            
+        print(
+            f"Running {strategy_class.__name__} for {len(ticker_list)} tickers from {start_date.date()} to {end_date.date()}"
+        )
+        # If there are many tickers, just show the first few
+        if len(ticker_list) <= 5:
+            print(f"Tickers: {', '.join(ticker_list)}")
+        else:
+            print(f"Tickers: {', '.join(ticker_list[:5])}... and {len(ticker_list) - 5} more")
+            
+        print(f"Using {benchmark_ticker} as benchmark for performance comparison")
+
+        # Get default parameters for the strategy
+        strategy_params = StrategyFactory.get_default_parameters(strategy)
 
         # Create and run backtest
         backtest = Backtest(
@@ -685,11 +696,11 @@ if __name__ == "__main__":
         try:
             # Run the backtest
             backtest.run(
-                tickers=ticker,
+                tickers=ticker_list,
                 start_date=start_date,
                 end_date=end_date,
                 db_name=db_name,
-                benchmark_ticker=ticker,  # Use same ticker as benchmark
+                benchmark_ticker=benchmark_ticker,
             )
 
             # Print results
@@ -705,5 +716,5 @@ if __name__ == "__main__":
 
             traceback.print_exc()  # Print full traceback for debugging
 
-    # Run the command
-    run_backtest()
+    # Run the command line interface
+    cli()

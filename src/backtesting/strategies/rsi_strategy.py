@@ -208,3 +208,21 @@ class RSIStrategy(Strategy):
 
         # Optional: Update portfolio value after trades (often handled by the backtest loop)
         # self.portfolio.update_value(latest_timestamp)
+
+    @classmethod
+    def get_default_parameters(cls) -> Dict:
+        """
+        Get default parameters for the RSI strategy.
+        
+        Returns:
+        --------
+        Dict
+            Dictionary of default parameters
+        """
+        return {
+            "rsi_period": 14,
+            "overbought_threshold": 70,
+            "oversold_threshold": 30,
+            "max_capital_per_position": 0.9,
+            "commission": 0.001,
+        }

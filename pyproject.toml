@@ -26,6 +26,11 @@ notebook = [
     "notebook>=7.0.0",
     "ipykernel>=6.0.0",
 ]
+timeseries = [
+    "chronos-forecasting @ git+https://github.com/amazon-science/chronos-forecasting.git",
+]
+
+
 
 # Add the build-system section
 [build-system]

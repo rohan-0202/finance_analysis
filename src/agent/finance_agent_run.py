@@ -188,7 +188,7 @@ def analyze_all_tickers(
     help="Path to file with ticker symbols",
     show_default=True,
 )
-@click.option("--output-file", help="Optional path to save results", default=None)
+@click.option("--output-file", help="Optional path to save results (deprecated)", default=None)
 @click.option(
     "--db-path",
     default=os.getenv("DB_PATH", "finance_news.db"),
@@ -247,47 +247,56 @@ def analyze_single_ticker(
     )
 
     start_time = datetime.now()
-    result = agent.process_ticker(ticker)
+    agent.process_ticker(ticker)
     duration = (datetime.now() - start_time).total_seconds()
-    print(result)
 
-    # Display results
-    click.echo("\n===== ANALYSIS RESULTS =====\n")
-    click.echo(f"Ticker: {result.get('ticker')}")
-    click.echo(f"Summary: {result.get('summary')}")
+    # If using database, fetch and display the latest analysis
+    if use_db:
+        click.echo("\n===== ANALYSIS RESULTS =====\n")
+        
+        # Get latest news
+        news = agent._get_latest_news(ticker, limit=max_articles)
+        if news:
+            click.echo(f"Latest news for {ticker} ({len(news)} articles):")
+            for i, article in enumerate(news, 1):
+                click.echo(f"\n[{i}] {article['title']}")
+                click.echo(f"Source: {article['source']} | Date: {article['publish_date']}")
+                if article.get('url'):
+                    click.echo(f"URL: {article['url']}")
+                if article.get('summary'):
+                    click.echo(f"Summary: {article['summary'][:150]}...")
 
-    if "key_points" in result:
-        click.echo("\nKey Points:")
-        for point in result.get("key_points", []):
-            click.echo(f"- {point}")
-
-    if "financial_implications" in result:
-        click.echo(f"\nFinancial Implications: {result.get('financial_implications')}")
-
-    sentiment = result.get("sentiment", "neutral")
-    if sentiment == "bullish":
-        sentiment_str = click.style(sentiment, fg="green")
-    elif sentiment == "bearish":
-        sentiment_str = click.style(sentiment, fg="red")
-    else:
-        sentiment_str = click.style(sentiment, fg="yellow")
-
-    click.echo(f"\nSentiment: {sentiment_str}")
-    click.echo(f"Confidence: {result.get('confidence', 'low')}")
-
-    # Save the full results to a JSON file if output_file specified
-    if output_file:
-        output_path = output_file
-    else:
-        output_dir = Path("news_analysis_results")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{ticker}_analysis.json"
-
-    with open(output_path, "w") as f:
-        json.dump(result, f, indent=2)
-
-    click.echo(f"\nFull results saved to {output_path}")
-    click.echo(f"Processing time: {duration:.2f} seconds")
+        # If LLM analysis was enabled, show the analysis results
+        if analyze_with_llm:
+            analysis = agent._get_latest_analysis(ticker)
+            if analysis:
+                click.echo(f"\nAnalysis Summary:")
+                click.echo(f"Summary: {analysis['summary']}")
+                
+                if analysis.get('key_points'):
+                    click.echo("\nKey Points:")
+                    for point in analysis['key_points']:
+                        click.echo(f"- {point}")
+                
+                sentiment = analysis.get('sentiment', 'neutral')
+                if sentiment == "bullish":
+                    sentiment_str = click.style(sentiment, fg="green")
+                elif sentiment == "bearish":
+                    sentiment_str = click.style(sentiment, fg="red")
+                else:
+                    sentiment_str = click.style(sentiment, fg="yellow")
+                
+                click.echo(f"\nSentiment: {sentiment_str}")
+                click.echo(f"Confidence: {analysis.get('confidence', 'low')}")
+                
+                if analysis.get('financial_implications'):
+                    click.echo(f"Financial Implications: {analysis['financial_implications']}")
+            else:
+                click.echo("\nNo analysis results found in database.")
+        else:
+            click.echo("\nLLM analysis was disabled. News articles have been stored in the database.")
+    
+    click.echo(f"\nProcessing time: {duration:.2f} seconds")
 
 
 # endregion analyze single ticker command

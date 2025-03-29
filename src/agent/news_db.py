@@ -105,5 +105,5 @@ def create_news_db(db_name="finance_news.db"):
 
 
 if __name__ == "__main__":
-    create_news_database()
+    create_news_db()
     print("News database setup complete.")

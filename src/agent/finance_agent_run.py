@@ -7,8 +7,8 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
-from agent.finance_news_agent import FinanceNewsAgent
-from agent.news_db import create_news_db
+from finance_news_agent import FinanceNewsAgent
+from news_db import create_news_db
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -104,7 +104,7 @@ def query_database(db_path, list_tickers, ticker, get_news):
 @click.option(
     "--output-file",
     default="finance_news_results.json",
-    help="Path to save results",
+    help="Path to save results (deprecated, using database instead)",
     show_default=True,
 )
 @click.option(
@@ -169,29 +169,9 @@ def analyze_all_tickers(
 
     start_time = datetime.now()
     # Run the agent with the specified parameters
-    results = agent.run(output_file=output_file, max_tickers=max_tickers)
+    agent.run(max_tickers=max_tickers)
     end_time = datetime.now()
-
     duration = (end_time - start_time).total_seconds() / 60
-
-    # Print the results
-    click.echo(f"Analyzed {len(results)} tickers in {duration:.1f} minutes.")
-    for ticker, result in results.items():
-        sentiment = result.get("sentiment", "neutral")
-        confidence = result.get("confidence", "low")
-
-        # Color-code the sentiment
-        if sentiment == "bullish":
-            sentiment_str = click.style(sentiment, fg="green")
-        elif sentiment == "bearish":
-            sentiment_str = click.style(sentiment, fg="red")
-        else:
-            sentiment_str = click.style(sentiment, fg="yellow")
-
-        click.echo(f"{ticker}: {sentiment_str} (confidence: {confidence})")
-
-    if output_file:
-        click.echo(f"Full results written to {output_file}")
 
     click.echo(f"Total runtime: {duration:.1f} minutes")
 

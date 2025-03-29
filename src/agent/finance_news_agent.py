@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from tqdm import tqdm
 
-from .finhub_util import fetch_news_finnhub
+from finhub_util import fetch_news_finnhub
 
 # Configure logging
 logging.basicConfig(
@@ -166,66 +166,31 @@ class FinanceNewsAgent:
         Returns:
             Dictionary with analysis results
         """
-        # Basic validation
-        if not news_data:
-            logger.warning(f"No news data to analyze for {ticker}")
-            return {
-                "ticker": ticker,
-                "error": "No news data to analyze",
-                "summary": "No recent news articles were found for analysis.",
-                "articles": [],
-                "key_points": [],
-                "financial_implications": "N/A",
-                "sentiment": "neutral",
-                "confidence": "low",
-            }
+        # Basic validation and filtering
+        valid_articles = [
+            article for article in news_data 
+            if isinstance(article, dict) and (article.get("title") or article.get("headline"))
+        ][:self.max_articles_per_ticker]
 
-        # Check format and filter any non-dictionary articles
-        valid_articles = [article for article in news_data if isinstance(article, dict)]
-
-        if len(valid_articles) == 0:
+        if not valid_articles:
             logger.warning(f"No valid news articles for {ticker}")
-            return {
-                "ticker": ticker,
-                "error": "No valid news articles",
-                "summary": "The news data format was invalid for analysis.",
-                "articles": [],
-                "key_points": [],
-                "financial_implications": "N/A",
-                "sentiment": "neutral",
-                "confidence": "low",
-            }
+            return self._create_error_response(ticker, "No valid news articles found")
 
-        # Take only the most recent articles up to max_articles_per_ticker
-        valid_articles = valid_articles[: self.max_articles_per_ticker]
+        # Prepare context about the articles for the LLM
+        article_summaries = [
+            f"{i}. {article.get('title', article.get('headline'))}"
+            for i, article in enumerate(valid_articles, 1)
+        ]
+        
+        context = f"Recent news about {ticker}:\n\n" + "\n".join(article_summaries)
 
-        # Prepare context about the articles for the LLM - more concise to reduce tokens
-        context = f"Recent news about {ticker}:\n\n"
-
-        # Only include essential information from each article to reduce prompt size
-        article_summaries = []
-        for i, article in enumerate(valid_articles, 1):
-            # Extract article information, with fallbacks for different formats
-            title = (
-                self._safe_extract(article, "headline", fallbacks=["title"])
-                or "Untitled"
-            )
-
-            # Only include the title to keep context small and fast to process
-            article_summary = f"{i}. {title}"
-            article_summaries.append(article_summary)
-
-        # Join all article summaries
-        context += "\n".join(article_summaries)
-
-        # Only include minimal financial data if available
+        # Add minimal financial data if available
         if financial_data and financial_data.get("quote"):
             quote = financial_data["quote"]
             context += f"\n\nCurrent price: ${quote.get('c', 'N/A')} (Change: {quote.get('dp', 'N/A')}%)"
 
-        # Create a very concise prompt focused on speed
+        # Create the prompt
         system_prompt = f"You are a financial analyst. Analyze these news headlines for ${ticker} stock."
-
         user_prompt = f"""{context}
 
 Based on these headlines:
@@ -234,17 +199,16 @@ Based on these headlines:
 3. State if sentiment is bullish, bearish, or neutral
 4. Rate your confidence as high, medium, or low
 
-Format as JSON:
-{{
-  "summary": "brief summary",
-  "key_points": ["point 1", "point 2"],
-  "sentiment": "bullish/bearish/neutral",
-  "confidence": "high/medium/low"
-}}"""
+Format your response in clear sections:
+SUMMARY: (your summary)
+KEY POINTS:
+- (point 1)
+- (point 2)
+SENTIMENT: (bullish/bearish/neutral)
+CONFIDENCE: (high/medium/low)"""
 
-        # Make the API request to LMStudio with reduced max_tokens
         try:
-            logger.info(f"Analyzing with LMStudio: {self.lmstudio_url}")
+            # Make the API request to LMStudio
             response = requests.post(
                 f"{self.lmstudio_url}/chat/completions",
                 headers={"Content-Type": "application/json"},
@@ -253,128 +217,97 @@ Format as JSON:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    "temperature": 0.3,  # Lower temperature for more consistent responses
-                    "max_tokens": 500,  # Reduced from 2000 to 500
+                    "temperature": 0.3,
+                    "max_tokens": 500,
                 },
+                timeout=30  # Add timeout to prevent hanging
             )
 
-            if response.status_code != 200:
-                logger.error(f"Error from LMStudio API: {response.status_code}")
-
-                # Try a simpler request format as fallback
-                logger.info("Trying simplified request format")
-                response = requests.post(
-                    f"{self.lmstudio_url}/chat/completions",
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": f"{system_prompt}\n\n{user_prompt}",
-                            }
-                        ],
-                        "temperature": 0.3,
-                        "max_tokens": 500,
-                    },
-                )
-
-                if response.status_code != 200:
-                    return self._create_error_response(
-                        ticker, f"API Error: {response.status_code}"
-                    )
-
-            # Process the response
-            result = response.json()
-
-            # Extract content from the response
-            content = ""
-            if "choices" in result and result["choices"]:
-                choice = result["choices"][0]
-                if "message" in choice and "content" in choice["message"]:
-                    content = choice["message"]["content"]
-                elif "text" in choice:
-                    content = choice["text"]
+            response.raise_for_status()  # Raise exception for non-200 status codes
+            
+            # Extract the content from the response
+            content = (response.json()
+                      .get("choices", [{}])[0]
+                      .get("message", {}).get("content", "") 
+                      or response.json().get("choices", [{}])[0].get("text", ""))
 
             if not content:
-                return self._create_error_response(
-                    ticker, "Failed to extract content from API response"
-                )
+                return self._create_error_response(ticker, "Empty response from LLM")
 
-            # Try to parse JSON from the response content
-            try:
-                # First, try direct JSON parsing
-                analysis_result = json.loads(content)
-            except json.JSONDecodeError:
-                # If that fails, try to extract JSON from markdown code blocks
-                try:
-                    # Look for JSON in markdown code blocks
-                    json_match = re.search(
-                        r"```(?:json)?\s*(.*?)```", content, re.DOTALL
-                    )
+            # Initialize analysis result with defaults
+            analysis_result = {
+                "ticker": ticker,
+                "articles_analyzed": len(valid_articles),
+                "summary": "Summary not provided",
+                "key_points": [],
+                "sentiment": "neutral",
+                "confidence": "low",
+                "financial_implications": "Limited impact on stock price expected"
+            }
 
-                    if json_match:
-                        json_content = json_match.group(1).strip()
-                        analysis_result = json.loads(json_content)
-                    else:
-                        # Try to find anything that looks like a JSON object
-                        json_match = re.search(r"({[\s\S]*})", content)
-                        if json_match:
-                            json_content = json_match.group(1)
-                            analysis_result = json.loads(json_content)
-                        else:
-                            # If all else fails, create a structured response manually
-                            analysis_result = self._extract_structured_content(content)
-                except Exception:
-                    analysis_result = self._extract_structured_content(content)
+            # Define section markers and their end markers
+            section_markers = {
+                "SUMMARY:": ["KEY POINTS:", "SENTIMENT:", "CONFIDENCE:"],
+                "KEY POINTS:": ["SENTIMENT:", "CONFIDENCE:"],
+                "SENTIMENT:": ["CONFIDENCE:"],
+                "CONFIDENCE:": []
+            }
 
-            # Ensure all required fields are present (simplified)
-            required_fields = ["summary", "key_points", "sentiment", "confidence"]
-
-            for field in required_fields:
-                if field not in analysis_result:
-                    if field == "key_points":
-                        analysis_result[field] = []
-                    else:
-                        analysis_result[field] = "Not provided"
-
-            # Get a financial implications from the analysis if needed
-            if "financial_implications" not in analysis_result:
-                if analysis_result["sentiment"] == "bullish":
-                    analysis_result["financial_implications"] = (
-                        "Potentially positive impact on stock price"
-                    )
-                elif analysis_result["sentiment"] == "bearish":
-                    analysis_result["financial_implications"] = (
-                        "Potentially negative impact on stock price"
-                    )
-                else:
-                    analysis_result["financial_implications"] = (
-                        "Limited impact on stock price expected"
-                    )
-
-            # Add metadata
-            analysis_result["ticker"] = ticker
-            analysis_result["articles"] = article_summaries
-            analysis_result["articles_analyzed"] = len(valid_articles)
+            # Extract each section
+            for section, end_markers in section_markers.items():
+                if section in content:
+                    start_idx = content.find(section) + len(section)
+                    end_idx = len(content)
+                    for marker in end_markers:
+                        marker_idx = content.find(marker, start_idx)
+                        if marker_idx != -1:
+                            end_idx = min(end_idx, marker_idx)
+                    
+                    value = content[start_idx:end_idx].strip()
+                    
+                    # Process each section type
+                    if section == "SUMMARY:":
+                        analysis_result["summary"] = value
+                    elif section == "KEY POINTS:":
+                        analysis_result["key_points"] = [
+                            p.strip("- ").strip() 
+                            for p in value.split("\n") 
+                            if p.strip().startswith("-")
+                        ]
+                    elif section == "SENTIMENT:":
+                        value = value.lower()
+                        if "bull" in value:
+                            analysis_result["sentiment"] = "bullish"
+                            analysis_result["financial_implications"] = "Potentially positive impact on stock price"
+                        elif "bear" in value:
+                            analysis_result["sentiment"] = "bearish"
+                            analysis_result["financial_implications"] = "Potentially negative impact on stock price"
+                    elif section == "CONFIDENCE:":
+                        value = value.lower()
+                        if "high" in value:
+                            analysis_result["confidence"] = "high"
+                        elif any(x in value for x in ["medium", "mod"]):
+                            analysis_result["confidence"] = "medium"
 
             return analysis_result
 
+        except requests.RequestException as e:
+            logger.error(f"API request error for {ticker}: {e}")
+            return self._create_error_response(ticker, f"API request failed: {str(e)}")
         except Exception as e:
             logger.error(f"Error analyzing news for {ticker}: {e}")
-            return self._create_error_response(ticker, f"Analysis error: {str(e)}")
+            return self._create_error_response(ticker, str(e))
 
     def _create_error_response(self, ticker: str, error_message: str) -> Dict:
         """Create a standardized error response."""
         return {
             "ticker": ticker,
             "error": error_message,
-            "summary": "Error during analysis. See error field for details.",
-            "articles": [],
+            "summary": "Error during analysis",
             "key_points": [],
-            "financial_implications": "Unable to analyze due to error",
-            "price_impact": "unknown",
             "sentiment": "neutral",
             "confidence": "low",
+            "articles_analyzed": 0
         }
 
     def _safe_extract(self, data: Dict, key: str, fallbacks: List[str] = None) -> Any:
@@ -389,78 +322,6 @@ Format as JSON:
 
         return None
 
-    def _extract_structured_content(self, text: str) -> Dict:
-        """Extract structured content from text when JSON parsing fails."""
-        result = {
-            "summary": "",
-            "key_points": [],
-            "financial_implications": "",
-            "sentiment": "neutral",
-            "confidence": "low",
-        }
-
-        # Try to extract summary
-        summary_match = re.search(
-            r"(?:Summary|SUMMARY)[:\s]*(.*?)(?:\n\n|\n\d\.|\Z)", text, re.DOTALL
-        )
-        if summary_match:
-            result["summary"] = summary_match.group(1).strip()
-
-        # Try to extract key points
-        key_points_section = re.search(
-            r"(?:Key Points|KEY POINTS)[:\s]*(.*?)(?:\n\n|\n\d\.|\Z)", text, re.DOTALL
-        )
-        if key_points_section:
-            points_text = key_points_section.group(1)
-            # Look for bullet points or numbered lists
-            points = re.findall(
-                r"(?:^|\n)[•\-*\d)\s]+\s*(.*?)(?=$|\n[•\-*\d)])", points_text, re.DOTALL
-            )
-            if points:
-                result["key_points"] = [p.strip() for p in points]
-            else:
-                # If no bullet points found, split by newlines
-                result["key_points"] = [
-                    p.strip() for p in points_text.split("\n") if p.strip()
-                ]
-
-        # Try to extract financial implications
-        implications_match = re.search(
-            r"(?:Financial Implications|FINANCIAL IMPLICATIONS)[:\s]*(.*?)(?:\n\n|\n\d\.|\Z)",
-            text,
-            re.DOTALL,
-        )
-        if implications_match:
-            result["financial_implications"] = implications_match.group(1).strip()
-
-        # Try to extract sentiment
-        sentiment_match = re.search(
-            r"(?:Sentiment|SENTIMENT)[:\s]*(.*?)(?:\n\n|\n\d\.|\Z)", text, re.DOTALL
-        )
-        if sentiment_match:
-            sentiment_text = sentiment_match.group(1).lower().strip()
-            if "bull" in sentiment_text:
-                result["sentiment"] = "bullish"
-            elif "bear" in sentiment_text:
-                result["sentiment"] = "bearish"
-            else:
-                result["sentiment"] = "neutral"
-
-        # Try to extract confidence
-        confidence_match = re.search(
-            r"(?:Confidence|CONFIDENCE)[:\s]*(.*?)(?:\n\n|\n\d\.|\Z)", text, re.DOTALL
-        )
-        if confidence_match:
-            confidence_text = confidence_match.group(1).lower().strip()
-            if "high" in confidence_text:
-                result["confidence"] = "high"
-            elif "medium" in confidence_text or "mod" in confidence_text:
-                result["confidence"] = "medium"
-            else:
-                result["confidence"] = "low"
-
-        return result
-
     def _store_ticker_info(
         self, ticker: str, name: Optional[str] = None, industry: Optional[str] = None
     ) -> None:
@@ -471,37 +332,17 @@ Format as JSON:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-
-                # Check if ticker exists
-                cursor.execute("SELECT ticker FROM tickers WHERE ticker = ?", (ticker,))
-                exists = cursor.fetchone()
-
                 timestamp = datetime.now().isoformat()
 
-                if exists:
-                    # Update existing ticker
-                    if name or industry:
-                        query = "UPDATE tickers SET last_updated = ?"
-                        params = [timestamp]
-
-                        if name:
-                            query += ", name = ?"
-                            params.append(name)
-
-                        if industry:
-                            query += ", industry = ?"
-                            params.append(industry)
-
-                        query += " WHERE ticker = ?"
-                        params.append(ticker)
-
-                        cursor.execute(query, params)
-                else:
-                    # Insert new ticker
-                    cursor.execute(
-                        "INSERT INTO tickers (ticker, name, industry, last_updated) VALUES (?, ?, ?, ?)",
-                        (ticker, name, industry, timestamp),
-                    )
+                # Use UPSERT (INSERT OR REPLACE) instead of separate INSERT/UPDATE
+                cursor.execute("""
+                    INSERT OR REPLACE INTO tickers 
+                    (ticker, name, industry, last_updated)
+                    VALUES (?, 
+                            COALESCE(?, (SELECT name FROM tickers WHERE ticker = ?)), 
+                            COALESCE(?, (SELECT industry FROM tickers WHERE ticker = ?)),
+                            ?)
+                """, (ticker, name, ticker, industry, ticker, timestamp))
 
                 conn.commit()
                 logger.debug(f"Stored/updated ticker info for {ticker}")
@@ -797,101 +638,64 @@ Format as JSON:
             logger.error(f"Error getting tickers with analysis: {e}")
             return []
 
-    def process_ticker(self, ticker: str) -> Dict:
+    def process_ticker(self, ticker: str) -> None:
         """
         Process a single ticker - fetch news and analyze it.
 
         Args:
             ticker: Stock ticker symbol
-
-        Returns:
-            Dictionary with analysis results
         """
         logger.info(f"Processing ticker: {ticker}")
 
-        # Fetch news data from Finnhub - use the max_articles_per_ticker setting
+        # Fetch news data
         news_data = fetch_news_finnhub(
             ticker, self.finnhub_key, self.max_articles_per_ticker, self.days_lookback
         )
 
-        # Fetch financial data only if enabled
-        financial_data = {}
-        if self.fetch_financial_data:
-            financial_data = self.fetch_finnhub_financial_data(ticker)
+        if not news_data:
+            logger.warning(f"No news found for {ticker}")
+            return
 
         # Store news articles in database if enabled
-        if self.use_db and news_data:
+        if self.use_db:
             try:
                 self._store_news_articles(ticker, news_data)
             except Exception as e:
                 logger.error(f"Error storing news articles in database: {e}")
 
-        # Store financial data in database if enabled
-        if self.use_db and financial_data:
-            try:
-                for data_type, data in financial_data.items():
-                    if data:
-                        self._store_financial_data(ticker, data_type, data)
-            except Exception as e:
-                logger.error(f"Error storing financial data in database: {e}")
+        # Fetch and store financial data if enabled
+        financial_data = {}
+        if self.fetch_financial_data:
+            financial_data = self.fetch_finnhub_financial_data(ticker)
+            if self.use_db and financial_data:
+                try:
+                    for data_type, data in financial_data.items():
+                        if data:
+                            self._store_financial_data(ticker, data_type, data)
+                except Exception as e:
+                    logger.error(f"Error storing financial data in database: {e}")
 
-        # If we have news, analyze it along with the financial data
-        if news_data:
+        # Analyze with LLM if enabled
+        if self.analyze_with_llm:
             analysis = self.analyze_with_lmstudio(news_data, ticker, financial_data)
-
-            # Store analysis result in database if enabled
             if self.use_db:
                 try:
                     self._store_analysis_result(analysis)
                 except Exception as e:
                     logger.error(f"Error storing analysis result in database: {e}")
 
-            return analysis
-        else:
-            logger.warning(f"No news found for {ticker}")
-            return {"ticker": ticker, "summary": "No news found", "articles": []}
-
-    def run(
-        self, output_file: Optional[str] = None, max_tickers: Optional[int] = None
-    ) -> Dict[str, Dict]:
+    def run(self, max_tickers: Optional[int] = None) -> None:
         """
         Run the news analysis on all tickers.
 
         Args:
-            output_file: Optional path to save results as JSON
             max_tickers: Maximum number of tickers to process (for limiting runtime)
-
-        Returns:
-            Dictionary mapping ticker symbols to their analysis results
         """
-        results = {}
-
         # Limit the number of tickers if specified
-        if max_tickers and max_tickers > 0:
-            tickers_to_process = self.tickers[:max_tickers]
-            logger.info(
-                f"Processing {len(tickers_to_process)} out of {len(self.tickers)} tickers"
-            )
-        else:
-            tickers_to_process = self.tickers
-            logger.info(f"Processing all {len(tickers_to_process)} tickers")
+        tickers_to_process = self.tickers[:max_tickers] if max_tickers and max_tickers > 0 else self.tickers
+        logger.info(f"Processing {len(tickers_to_process)} tickers")
 
         for ticker in tqdm(tickers_to_process, desc="Processing tickers"):
-            results[ticker] = self.process_ticker(ticker)
+            self.process_ticker(ticker)
 
-        logger.info(f"Completed analysis of {len(results)} tickers")
-
-        # Save results if output file is specified
-        if output_file:
-            try:
-                output_path = Path(output_file)
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-
-                with open(output_path, "w") as f:
-                    json.dump(results, f, indent=2)
-
-                logger.info(f"Results saved to {output_file}")
-            except Exception as e:
-                logger.error(f"Error saving results to {output_file}: {e}")
-
-        return results
+        logger.info("Completed processing all tickers")

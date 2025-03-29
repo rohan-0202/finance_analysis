@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, TypedDict
+from typing import List, Optional, Tuple, TypedDict
 
 import pandas as pd
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -170,7 +170,7 @@ class Portfolio:
             return {"total_return": 0.0}
 
         # Extract time series
-        timestamps, equity = zip(*self.equity_history)
+        timestamps, equity = zip(*self.equity_history, strict=False)
         equity_series = pd.Series(equity, index=timestamps)
 
         # Calculate returns

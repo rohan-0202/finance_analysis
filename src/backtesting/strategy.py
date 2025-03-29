@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict
 
-import numpy as np
 import pandas as pd
 
 from backtesting.portfolio import Portfolio

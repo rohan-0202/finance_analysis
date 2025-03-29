@@ -7,7 +7,6 @@ import pytest
 from backtesting.portfolio import Portfolio
 from backtesting.strategies.rsi_strategy import RSIStrategy
 from signals.rsi_signal import RSISignal
-from signals.signal_factory import SignalFactory
 
 
 @pytest.fixture

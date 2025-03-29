@@ -74,7 +74,7 @@ class RSIStrategy(Strategy):
         Parameters:
         -----------
         data : pd.DataFrame
-            MultiIndex DataFrame with ('Timestamp', 'Ticker') index
+            MultiIndex DataFrame with ('timestamp', 'Ticker') index
             and 'close' column. Must contain enough history for RSI calculation.
 
         Returns:
@@ -90,7 +90,7 @@ class RSIStrategy(Strategy):
         if not data.index.is_monotonic_increasing:
             data = data.sort_index()
 
-        tickers = data.index.get_level_values("Ticker").unique()
+        tickers = data.index.get_level_values("ticker").unique()
         min_required_data = (
             self.parameters["rsi_period"] + 1
         )  # Need diff, so period+1 points
@@ -101,9 +101,9 @@ class RSIStrategy(Strategy):
         for ticker in tickers:
             # Use .loc for potentially non-unique Ticker index slices if needed
             # ticker_data = data.loc[(slice(None), ticker), 'close']
-            # Using xs assumes Ticker level is unique per Timestamp or handles non-uniqueness gracefully
+            # Using xs assumes Ticker level is unique per timestamp or handles non-uniqueness gracefully
             try:
-                ticker_data = data.xs(ticker, level="Ticker")["close"]
+                ticker_data = data.xs(ticker, level="ticker")["close"]
             except KeyError:
                 continue  # Ticker not present in this data slice?
 
@@ -147,23 +147,23 @@ class RSIStrategy(Strategy):
 
         # Ensure data has the expected MultiIndex
         if not isinstance(data.index, pd.MultiIndex) or list(data.index.names) != [
-            "Timestamp",
-            "Ticker",
+            "timestamp",
+            "ticker",
         ]:
             print(
-                "Error: Dataframe passed to RSIStrategy.execute does not have ('Timestamp', 'Ticker') MultiIndex."
+                "Error: Dataframe passed to RSIStrategy.execute does not have ('timestamp', 'Ticker') MultiIndex."
             )
             # Or handle alternative data formats if necessary
             return
 
         # Get the latest timestamp from the data provided
-        latest_timestamp = data.index.get_level_values("Timestamp").max()
+        latest_timestamp = data.index.get_level_values("timestamp").max()
         self.last_update_time = latest_timestamp  # Update strategy timestamp
 
         # Update portfolio's current prices based on the latest 'close' prices in data
         # Assumes data contains the closing prices for latest_timestamp
         try:
-            latest_data_slice = data.xs(latest_timestamp, level="Timestamp")
+            latest_data_slice = data.xs(latest_timestamp, level="timestamp")
             for ticker, row in latest_data_slice.iterrows():
                 # Check if ticker is a string/expected type, row might be Series
                 if (
@@ -346,12 +346,11 @@ if __name__ == "__main__":
                 raise ValueError("Data must contain a 'close' column.")
 
             # Add 'Ticker' level to index for compatibility with strategy methods
-            all_data["Ticker"] = ticker
-            all_data = all_data.reset_index().rename(columns={"timestamp": "Timestamp"})
-            all_data["Timestamp"] = pd.to_datetime(
-                all_data["Timestamp"]
+            all_data["ticker"] = ticker
+            all_data["timestamp"] = pd.to_datetime(
+                all_data["timestamp"]
             )  # Ensure datetime type
-            all_data = all_data.set_index(["Timestamp", "Ticker"])
+            all_data = all_data.set_index(["timestamp", "ticker"])
             all_data = all_data.sort_index()
 
         except Exception as e:
@@ -381,12 +380,12 @@ if __name__ == "__main__":
 
         # Filter all_data to the actual backtest window before getting timestamps
         backtest_data_range = all_data[
-            (all_data.index.get_level_values("Timestamp") >= actual_start_timestamp)
-            & (all_data.index.get_level_values("Timestamp") <= actual_end_timestamp)
+            (all_data.index.get_level_values("timestamp") >= actual_start_timestamp)
+            & (all_data.index.get_level_values("timestamp") <= actual_end_timestamp)
         ]
 
         backtest_timestamps = backtest_data_range.index.get_level_values(
-            "Timestamp"
+            "timestamp"
         ).unique()
 
         if len(backtest_timestamps) == 0:
@@ -412,7 +411,7 @@ if __name__ == "__main__":
                     buy_hold_shares = start_cash / first_price
 
                     # Get closing prices for the ticker during the backtest period
-                    buy_hold_prices = backtest_data_range.xs(ticker, level="Ticker")[
+                    buy_hold_prices = backtest_data_range.xs(ticker, level="ticker")[
                         "close"
                     ]
 
@@ -435,7 +434,7 @@ if __name__ == "__main__":
             # Provide data up to and including the current day's timestamp
             # Ensure we slice from the original 'all_data' which includes the buffer period
             data_slice = all_data[
-                all_data.index.get_level_values("Timestamp") <= current_timestamp
+                all_data.index.get_level_values("timestamp") <= current_timestamp
             ]
 
             if not data_slice.empty:

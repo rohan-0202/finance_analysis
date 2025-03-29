@@ -177,3 +177,6 @@ site/build
 site/coverage
 site/dist
 site/public
+
+.vscode/
+.pyrightconfig.json

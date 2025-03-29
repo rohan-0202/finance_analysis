@@ -4,8 +4,9 @@ from datetime import datetime
 
 import click
 from dotenv import load_dotenv
-from finance_news_agent import FinanceNewsAgent
-from news_db import create_news_db
+
+from agent.finance_news_agent import FinanceNewsAgent
+from agent.news_db import create_news_db
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

@@ -15,8 +15,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
-from finhub_util import fetch_news_finnhub
+from agent.finhub_util import fetch_news_finnhub
 from tqdm import tqdm
+
+
 
 # Configure logging
 logging.basicConfig(

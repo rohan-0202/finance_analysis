@@ -6,10 +6,12 @@ from typing import Dict, List
 # Add the src directory to the path if needed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import the relevant functions from the RSI, MACD, and OBV modules
+# Import the relevant functions from the MACD and OBV modules
 from signals.macd import get_latest_macd_signal
-from signals.obv import get_latest_obv_signal
-from signals.rsi import get_latest_rsi_signal
+from signals.obv import get_latest_obv_signal, get_obv_status_text
+
+# Import SignalFactory for RSI
+from signals.signal_factory import SignalFactory
 
 
 def get_combined_signals(
@@ -80,9 +82,15 @@ def get_combined_signals(
             latest_macd_signal = get_latest_macd_signal(
                 ticker, db_name=db_name, days=days
             )
-            latest_rsi_signal = get_latest_rsi_signal(
+
+            # Create RSI signal using the factory
+            rsi_signal = SignalFactory.create_signal("rsi")
+
+            # Get latest RSI signal using the RSISignal class
+            latest_rsi_signal = rsi_signal.get_latest_signal(
                 ticker, db_name=db_name, days=days
             )
+
             latest_obv_signal = get_latest_obv_signal(
                 ticker, db_name=db_name, days=days
             )
@@ -283,7 +291,6 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
     """
     from signals.macd import calculate_macd
     from signals.obv import calculate_ticker_obv, get_obv_status_text
-    from signals.rsi import calculate_ticker_rsi
 
     print(f"\n=== DETAILED ANALYSIS FOR {ticker} ===")
 
@@ -292,11 +299,14 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
         price_data_macd, macd_data = calculate_macd(ticker, db_name=db_name, days=days)
         latest_macd_signal = get_latest_macd_signal(ticker, db_name=db_name, days=days)
 
-        # Get RSI data
-        price_data_rsi, rsi_data = calculate_ticker_rsi(
+        # Create RSI signal using the factory and get RSI data
+        rsi_signal = SignalFactory.create_signal("rsi")
+        price_data_rsi, rsi_data = rsi_signal.calculate_indicator(
             ticker, db_name=db_name, days=days
         )
-        latest_rsi_signal = get_latest_rsi_signal(ticker, db_name=db_name, days=days)
+        latest_rsi_signal = rsi_signal.get_latest_signal(
+            ticker, db_name=db_name, days=days
+        )
 
         # Get OBV data
         price_data_obv, obv_data = calculate_ticker_obv(
@@ -480,5 +490,3 @@ if __name__ == "__main__":
         get_combined_signals(
             days=args.days, verbose=not args.silent, signal_type=args.signal_type
         )
-
-        get_combined_signals(days=args.days, verbose=not args.silent)

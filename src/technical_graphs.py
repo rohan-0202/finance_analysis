@@ -10,16 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.gridspec import GridSpec
 
-# Import functions from macd.py and obv.py
-from signals.macd import (
-    calculate_macd,
-    get_latest_macd_signal,
-    get_macd_crossovers,
-    get_signal_stats_text,
-)
-from signals.obv import calculate_ticker_obv, get_latest_obv_signal
-
-# Import SignalFactory instead of direct RSI functions
+# Import SignalFactory for all signals
 from signals.signal_factory import SignalFactory
 
 # Suppress pandas warnings
@@ -83,19 +74,22 @@ def plot_indicators(
     fig : matplotlib.figure.Figure
         The matplotlib figure object
     """
-    # Get MACD and OBV data
-    price_data, macd_data = calculate_macd(
-        ticker_symbol, fast_period, slow_period, signal_period, db_name, days
+    # Create signals using the factory
+    macd_signal = SignalFactory.create_signal(
+        "macd",
+        fast_period=fast_period,
+        slow_period=slow_period,
+        signal_period=signal_period,
     )
-    _, obv_data = calculate_ticker_obv(ticker_symbol, db_name, days)
-
-    # Create RSI signal using the factory
     rsi_signal = SignalFactory.create_signal(
         "rsi", window=rsi_window, overbought=overbought, oversold=oversold
     )
+    obv_signal = SignalFactory.create_signal("obv", window=obv_window)
 
-    # Get RSI data using the RSISignal class
+    # Get indicator data
+    price_data, macd_data = macd_signal.calculate_indicator(ticker_symbol, db_name, days)
     _, rsi_data = rsi_signal.calculate_indicator(ticker_symbol, db_name, days)
+    _, obv_data = obv_signal.calculate_indicator(ticker_symbol, db_name, days)
 
     if price_data is None or macd_data is None or rsi_data is None or obv_data is None:
         print(f"Could not calculate indicators for {ticker_symbol}")
@@ -112,15 +106,16 @@ def plot_indicators(
     )  # Added 4th panel for OBV
 
     # Get signals for indicators
-    macd_crossovers = get_macd_crossovers(macd_data)
+    macd_signals = macd_signal.get_signals(ticker_symbol, db_name, days)
+    macd_crossovers = [(s["date"], "bullish" if s["type"] == "buy" else "bearish") for s in macd_signals]
 
-    # Get RSI signals using the RSISignal class
+    # Get RSI signals
     rsi_signals = rsi_signal.get_signals(ticker_symbol, db_name, days)
     buy_signals = [(s["date"], s["price"]) for s in rsi_signals if s["type"] == "buy"]
     sell_signals = [(s["date"], s["price"]) for s in rsi_signals if s["type"] == "sell"]
 
     # Get OBV signal
-    latest_obv_signal = get_latest_obv_signal(ticker_symbol, obv_window, db_name, days)
+    latest_obv_signal = obv_signal.get_latest_signal(ticker_symbol, db_name, days)
 
     # ========== PRICE CHART (TOP PANEL) ==========
     ax1 = fig.add_subplot(gs[0])
@@ -336,8 +331,17 @@ def plot_indicators(
     )
 
     # Add MACD stats
+    bullish_count = sum(1 for s in macd_signals if s["type"] == "buy")
+    bearish_count = sum(1 for s in macd_signals if s["type"] == "sell")
+    latest_macd = macd_signal.get_latest_signal(ticker_symbol, db_name, days)
+    
+    macd_stats = f"Bullish: {bullish_count}, Bearish: {bearish_count}\n"
+    if latest_macd:
+        days_ago = (datetime.now().date() - latest_macd["date"].date()).days
+        macd_stats += f"Latest: {latest_macd['type'].capitalize()} ({days_ago} days ago)"
+
     ax2.annotate(
-        get_signal_stats_text(macd_data),
+        macd_stats,
         xy=(0.98, 0.02),
         xycoords="axes fraction",
         fontsize=9,
@@ -506,14 +510,7 @@ def plot_indicators(
         else 0
     )
 
-    obv_stats = f"Current OBV: {current_obv:,.0f}\n"
-    obv_stats += f"5-day change: {obv_change:.2f}%"
-
-    if latest_obv_signal:
-        days_ago = (datetime.now().date() - latest_obv_signal["date"].date()).days
-        obv_stats += (
-            f"\nLatest: {latest_obv_signal['type'].capitalize()} ({days_ago} days ago)"
-        )
+    obv_stats = obv_signal.get_status_text(price_data, obv_data)
 
     ax4.annotate(
         obv_stats,
@@ -579,14 +576,19 @@ def main(ticker):
     # Display indicator data
     print(f"\nAnalyzing technical indicators for {ticker}...")
 
+    # Create signals using the factory
+    macd_signal = SignalFactory.create_signal("macd")
+    rsi_signal = SignalFactory.create_signal("rsi")
+    obv_signal = SignalFactory.create_signal("obv")
+
     # Get MACD data
-    _, macd_data = calculate_macd(ticker)
+    _, macd_data = macd_signal.calculate_indicator(ticker)
     if macd_data is not None:
         print("\nMACD values (recent):")
         print(macd_data.tail(3))
 
         # Show latest MACD signal
-        latest_macd = get_latest_macd_signal(ticker)
+        latest_macd = macd_signal.get_latest_signal(ticker)
         if latest_macd:
             print(
                 f"Latest signal: {latest_macd['type'].upper()} on "
@@ -595,9 +597,6 @@ def main(ticker):
             )
         else:
             print("No recent MACD signals")
-
-    # Create RSI signal using the factory
-    rsi_signal = SignalFactory.create_signal("rsi")
 
     # Get RSI data
     _, rsi_data = rsi_signal.calculate_indicator(ticker)
@@ -617,13 +616,13 @@ def main(ticker):
             print("No recent RSI signals")
 
     # Get OBV data
-    _, obv_data = calculate_ticker_obv(ticker)
+    _, obv_data = obv_signal.calculate_indicator(ticker)
     if obv_data is not None:
         print("\nOBV values (recent):")
         print(obv_data.tail(3))
 
         # Show latest OBV signal
-        latest_obv = get_latest_obv_signal(ticker)
+        latest_obv = obv_signal.get_latest_signal(ticker)
         if latest_obv:
             print(
                 f"Latest signal: {latest_obv['type'].upper()} on "

@@ -6,11 +6,7 @@ from typing import Dict, List
 # Add the src directory to the path if needed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import the relevant functions from the MACD and OBV modules
-from signals.macd import get_latest_macd_signal
-from signals.obv import get_latest_obv_signal, get_obv_status_text
-
-# Import SignalFactory for RSI
+# Import SignalFactory for all signals
 from signals.signal_factory import SignalFactory
 
 
@@ -72,26 +68,25 @@ def get_combined_signals(
     total_with_obv_sell = 0
     total_with_all_three_sell = 0
 
+    # Create signals using the factory
+    macd_signal = SignalFactory.create_signal("macd")
+    rsi_signal = SignalFactory.create_signal("rsi")
+    obv_signal = SignalFactory.create_signal("obv")
+
     # Process each ticker
     for i, ticker in enumerate(tickers):
         if verbose and (i + 1) % 10 == 0:
             print(f"Progress: {i + 1}/{len(tickers)} tickers processed")
 
         try:
-            # Get latest signals
-            latest_macd_signal = get_latest_macd_signal(
+            # Get latest signals using the signal classes
+            latest_macd_signal = macd_signal.get_latest_signal(
                 ticker, db_name=db_name, days=days
             )
-
-            # Create RSI signal using the factory
-            rsi_signal = SignalFactory.create_signal("rsi")
-
-            # Get latest RSI signal using the RSISignal class
             latest_rsi_signal = rsi_signal.get_latest_signal(
                 ticker, db_name=db_name, days=days
             )
-
-            latest_obv_signal = get_latest_obv_signal(
+            latest_obv_signal = obv_signal.get_latest_signal(
                 ticker, db_name=db_name, days=days
             )
 
@@ -289,165 +284,64 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
     days : int, default=365
         Number of days of historical data to use
     """
-    from signals.macd import calculate_macd
-    from signals.obv import calculate_ticker_obv, get_obv_status_text
-
     print(f"\n=== DETAILED ANALYSIS FOR {ticker} ===")
 
     try:
-        # Get MACD data
-        price_data_macd, macd_data = calculate_macd(ticker, db_name=db_name, days=days)
-        latest_macd_signal = get_latest_macd_signal(ticker, db_name=db_name, days=days)
-
-        # Create RSI signal using the factory and get RSI data
+        # Create signals using the factory
+        macd_signal = SignalFactory.create_signal("macd")
         rsi_signal = SignalFactory.create_signal("rsi")
-        price_data_rsi, rsi_data = rsi_signal.calculate_indicator(
-            ticker, db_name=db_name, days=days
-        )
-        latest_rsi_signal = rsi_signal.get_latest_signal(
-            ticker, db_name=db_name, days=days
-        )
+        obv_signal = SignalFactory.create_signal("obv")
+
+        # Get MACD data
+        price_data_macd, macd_data = macd_signal.calculate_indicator(ticker, db_name=db_name, days=days)
+        if macd_data is not None:
+            print("\nMACD values (recent):")
+            print(macd_data.tail(3))
+
+            # Show latest MACD signal
+            latest_macd = macd_signal.get_latest_signal(ticker, db_name=db_name, days=days)
+            if latest_macd:
+                print(
+                    f"Latest signal: {latest_macd['type'].upper()} on "
+                    f"{latest_macd['date'].strftime('%Y-%m-%d')} "
+                    f"(MACD: {latest_macd['macd']:.4f}, Signal: {latest_macd['signal']:.4f})"
+                )
+            else:
+                print("No recent MACD signals")
+
+        # Get RSI data
+        price_data_rsi, rsi_data = rsi_signal.calculate_indicator(ticker, db_name=db_name, days=days)
+        if rsi_data is not None:
+            print("\nRSI values (recent):")
+            print(rsi_data.tail(3))
+
+            # Show latest RSI signal
+            latest_rsi = rsi_signal.get_latest_signal(ticker, db_name=db_name, days=days)
+            if latest_rsi:
+                print(
+                    f"Latest signal: {latest_rsi['type'].upper()} on "
+                    f"{latest_rsi['date'].strftime('%Y-%m-%d')} "
+                    f"(RSI: {latest_rsi['rsi']:.2f})"
+                )
+            else:
+                print("No recent RSI signals")
 
         # Get OBV data
-        price_data_obv, obv_data = calculate_ticker_obv(
-            ticker, db_name=db_name, days=days
-        )
-        latest_obv_signal = get_latest_obv_signal(ticker, db_name=db_name, days=days)
-
-        # Print MACD info
-        print("\nMACD INFORMATION:")
-        if macd_data is not None:
-            print("Current MACD values:")
-            print(f"MACD: {macd_data['macd'].iloc[-1]:.4f}")
-            print(f"Signal: {macd_data['signal'].iloc[-1]:.4f}")
-            print(f"Histogram: {macd_data['histogram'].iloc[-1]:.4f}")
-
-            if latest_macd_signal:
-                days_ago = (
-                    datetime.now().date() - latest_macd_signal["date"].date()
-                ).days
-                print(
-                    f"\nLatest MACD signal: {latest_macd_signal['type'].upper()} ({days_ago} days ago)"
-                )
-                print(f"Price at signal: ${latest_macd_signal['price']:.2f}")
-            else:
-                print("\nNo recent MACD signals")
-        else:
-            print("Could not calculate MACD data")
-
-        # Print RSI info
-        print("\nRSI INFORMATION:")
-        if rsi_data is not None:
-            current_rsi = rsi_data.iloc[-1]
-            print(f"Current RSI: {current_rsi:.2f}")
-
-            # Interpret the current RSI value
-            if current_rsi > 70:
-                print("Status: OVERBOUGHT - Potential sell signal")
-            elif current_rsi < 30:
-                print("Status: OVERSOLD - Potential buy signal")
-            else:
-                print("Status: NEUTRAL")
-
-            if latest_rsi_signal:
-                days_ago = (
-                    datetime.now().date() - latest_rsi_signal["date"].date()
-                ).days
-                print(
-                    f"\nLatest RSI signal: {latest_rsi_signal['type'].upper()} ({days_ago} days ago)"
-                )
-                print(f"RSI at signal: {latest_rsi_signal['rsi']:.2f}")
-                print(f"Price at signal: ${latest_rsi_signal['price']:.2f}")
-            else:
-                print("\nNo recent RSI signals (crossing 30/70 thresholds)")
-        else:
-            print("Could not calculate RSI data")
-
-        # Print OBV info
-        print("\nOBV INFORMATION:")
+        price_data_obv, obv_data = obv_signal.calculate_indicator(ticker, db_name=db_name, days=days)
         if obv_data is not None:
-            current_obv = obv_data.iloc[-1]
-            print(f"Current OBV: {current_obv:,.0f}")
+            print("\nOBV values (recent):")
+            print(obv_data.tail(3))
 
-            # Get OBV status text
-            if price_data_obv is not None:
-                obv_status = get_obv_status_text(price_data_obv, obv_data)
-                print(f"Status: {obv_status.split('\n')[1]}")  # Just the status part
-
-            if latest_obv_signal:
-                days_ago = (
-                    datetime.now().date() - latest_obv_signal["date"].date()
-                ).days
+            # Show latest OBV signal
+            latest_obv = obv_signal.get_latest_signal(ticker, db_name=db_name, days=days)
+            if latest_obv:
                 print(
-                    f"\nLatest OBV signal: {latest_obv_signal['type'].upper()} ({days_ago} days ago)"
+                    f"Latest signal: {latest_obv['type'].upper()} on "
+                    f"{latest_obv['date'].strftime('%Y-%m-%d')} "
+                    f"(OBV: {latest_obv['obv']:,.0f})"
                 )
-                print(f"OBV at signal: {latest_obv_signal['obv']:,.0f}")
-                print(f"Price at signal: ${latest_obv_signal['price']:.2f}")
             else:
-                print("\nNo recent OBV divergence signals")
-        else:
-            print("Could not calculate OBV data")
-
-        # Conclusion
-        print("\nCOMBINED ANALYSIS:")
-        has_macd_buy = (
-            latest_macd_signal and latest_macd_signal["type"].lower() == "buy"
-        )
-        has_rsi_buy = latest_rsi_signal and latest_rsi_signal["type"].lower() == "buy"
-        has_obv_buy = latest_obv_signal and latest_obv_signal["type"].lower() == "buy"
-
-        has_macd_sell = (
-            latest_macd_signal and latest_macd_signal["type"].lower() == "sell"
-        )
-        has_rsi_sell = latest_rsi_signal and latest_rsi_signal["type"].lower() == "sell"
-        has_obv_sell = latest_obv_signal and latest_obv_signal["type"].lower() == "sell"
-
-        buy_count = sum([has_macd_buy, has_rsi_buy, has_obv_buy])
-        sell_count = sum([has_macd_sell, has_rsi_sell, has_obv_sell])
-
-        # Print buy signal analysis
-        if buy_count == 3:
-            print(
-                "STRONG BUY SIGNAL - All three indicators (MACD, RSI, OBV) indicate buying opportunity"
-            )
-        elif buy_count == 2:
-            indicators = []
-            if has_macd_buy:
-                indicators.append("MACD")
-            if has_rsi_buy:
-                indicators.append("RSI")
-            if has_obv_buy:
-                indicators.append("OBV")
-            print(
-                f"MODERATE BUY SIGNAL - Two indicators ({' and '.join(indicators)}) indicate buying opportunity"
-            )
-        elif buy_count == 1:
-            indicator = "MACD" if has_macd_buy else "RSI" if has_rsi_buy else "OBV"
-            print(f"WEAK BUY SIGNAL - Only {indicator} indicates buying opportunity")
-        else:
-            print("NO BUY SIGNALS - None of the indicators show buying opportunity")
-
-        # Print sell signal analysis
-        if sell_count == 3:
-            print(
-                "STRONG SELL SIGNAL - All three indicators (MACD, RSI, OBV) indicate selling opportunity"
-            )
-        elif sell_count == 2:
-            indicators = []
-            if has_macd_sell:
-                indicators.append("MACD")
-            if has_rsi_sell:
-                indicators.append("RSI")
-            if has_obv_sell:
-                indicators.append("OBV")
-            print(
-                f"MODERATE SELL SIGNAL - Two indicators ({' and '.join(indicators)}) indicate selling opportunity"
-            )
-        elif sell_count == 1:
-            indicator = "MACD" if has_macd_sell else "RSI" if has_rsi_sell else "OBV"
-            print(f"WEAK SELL SIGNAL - Only {indicator} indicates selling opportunity")
-        else:
-            print("NO SELL SIGNALS - None of the indicators show selling opportunity")
+                print("No recent OBV signals")
 
     except Exception as e:
         print(f"Error analyzing {ticker}: {e}")

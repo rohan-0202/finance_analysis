@@ -40,6 +40,12 @@ def cli():
     show_default=True,
 )
 @click.option(
+    "--tickers-file",
+    default=os.getenv("TICKERS_FILE", "nyse_tickers.txt"),
+    help="Path to file with ticker symbols",
+    show_default=True,
+)
+@click.option(
     "--list-tickers",
     is_flag=True,
     help="List all tickers with analysis in the database",
@@ -48,9 +54,19 @@ def cli():
 @click.option(
     "--get-news", is_flag=True, help="Get latest news for the specified ticker"
 )
-def query_database(db_path, list_tickers, ticker, get_news):
+def query_database(db_path, list_tickers, ticker, get_news, tickers_file):
     """Query the finance news database."""
-    agent = FinanceNewsAgent(db_path=db_path, use_db=True)
+    agent = agent = FinanceNewsAgent(
+        tickers_file=tickers_file,
+        lmstudio_url=lmstudio_url,
+        finnhub_key=finnhub_key,
+        days_lookback=5,
+        db_path=db_path,
+        use_db=True,
+        max_articles_per_ticker=5,
+        fetch_financial_data=False,
+        analyze_with_llm=False,
+    )
 
     if list_tickers:
         tickers = agent._get_tickers_with_analysis()

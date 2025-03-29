@@ -749,6 +749,10 @@ CONFIDENCE: (high/medium/low)"""
                 )
                 continue
             time.sleep(3)  # Add a delay of 3 seconds before processing each ticker
+            # Remove the ^ symbol from the ticker if it exists. the ^ symbol is used for indices
+            # and finnhub does not support the ^ symbol.
+            if ticker.startswith("^"):
+                ticker = ticker[1:]
             self.process_ticker(ticker)
 
         logger.info("Completed processing all tickers")

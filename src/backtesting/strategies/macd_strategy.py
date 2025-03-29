@@ -37,42 +37,45 @@ class MACDStrategy(Strategy):
 
         tickers = data.index.get_level_values(TICKER).unique()
         min_required_data = (
-            self.parameters["slow_period"] + self.parameters["signal_period"]
+            self.parameters["slow_period"] + self.parameters["signal_period"] + 1
         )
 
         for ticker in tickers:
             try:
                 ticker_data = data.xs(ticker, level=TICKER)[CLOSE]
+                if len(ticker_data) < min_required_data:
+                    signals[ticker] = 0.0  # Not enough data
+                    continue
             except KeyError:
-                continue  # Ticker not present in this data slice?
-
-            if len(ticker_data) < min_required_data:
-                signals[ticker] = 0.0  # Not enough data
+                signals[ticker] = 0.0  # Ticker data not available
                 continue
-
-            self.macd_signal.fast_period = self.parameters["fast_period"]
-            self.macd_signal.slow_period = self.parameters["slow_period"]
-            self.macd_signal.signal_period = self.parameters["signal_period"]
 
             macd_df = self.macd_signal.calculate_macd(ticker_data)
 
+            macd_df = macd_df.dropna()
+
             if (
                 macd_df.empty
-                or "MACD" not in macd_df.columns
-                or pd.isna(macd_df["MACD"].iloc[-1])
+                or len(macd_df) < 2
+                or "macd" not in macd_df.columns
+                or "signal" not in macd_df.columns
+                or pd.isna(macd_df["macd"].iloc[-1])
+                or pd.isna(macd_df["signal"].iloc[-1])
             ):
-                signals[ticker] = 0.0  # MACD calculation failed or latest is NaN
+                signals[ticker] = 0.0
                 continue
 
-            latest_macd = macd_df["MACD"].iloc[-1]
-            print(f"DEBUG: {ticker} - Latest MACD: {latest_macd}")
+            latest_macd = macd_df["macd"].iloc[-1]
+            latest_signal = macd_df["signal"].iloc[-1]
+            prev_macd = macd_df["macd"].iloc[-2]
+            prev_signal = macd_df["signal"].iloc[-2]
 
-            if latest_macd > 0:
-                signals[ticker] = 1.0  # Buy signal (MACD > 0)
-            elif latest_macd < 0:
-                signals[ticker] = -1.0  # Sell signal (MACD < 0)
+            if latest_macd > latest_signal and prev_macd <= prev_signal:
+                signals[ticker] = 1.0  # Buy signal (MACD crossed above Signal)
+            elif latest_macd < latest_signal and prev_macd >= prev_signal:
+                signals[ticker] = -1.0  # Sell signal (MACD crossed below Signal)
             else:
-                signals[ticker] = 0.0  # Neutral signal (MACD = 0)
+                signals[ticker] = 0.0  # Hold signal (No crossover)
 
         return signals
 
@@ -126,59 +129,29 @@ class MACDStrategy(Strategy):
 
         # Generate signals based on the historical data provided (up to latest_timestamp)
         self.current_signals = self.generate_signals(data)
-        print(
-            f"{latest_timestamp} - Generated Signals: {self.current_signals}"
-        )  # DEBUG
 
         # Apply risk management (using base implementation for now)
         adjusted_signals = self.apply_risk_management(self.current_signals)
-        print(f"{latest_timestamp} - Adjusted Signals: {adjusted_signals}")  # DEBUG
 
         for ticker, signal in adjusted_signals.items():
-            print(
-                f"{latest_timestamp} - Processing {ticker}, Signal: {signal}"
-            )  # DEBUG
-            # Check if we have a valid price for the ticker before proceeding
             if (
                 ticker not in self.portfolio.current_prices
                 or self.portfolio.current_prices[ticker] <= 0
             ):
-                print(
-                    f"{latest_timestamp} - Skipping {ticker}: Missing or invalid price. Price data: {self.portfolio.current_prices.get(ticker)}"
-                )  # DEBUG
                 continue  # Skip if price is missing or invalid
-
-            current_price = self.portfolio.current_prices[
-                ticker
-            ]  # Get price for logging
-            print(f"{latest_timestamp} - {ticker} Price: {current_price}")  # DEBUG
 
             # Calculate desired position size based on signal
             target_shares = self.calculate_position_size(ticker, signal)
-            print(
-                f"{latest_timestamp} - {ticker} Target Shares: {target_shares}"
-            )  # DEBUG
 
             # Get current position size
             current_shares = self.portfolio.holdings.get(ticker, 0)
-            print(
-                f"{latest_timestamp} - {ticker} Current Shares: {current_shares}"
-            )  # DEBUG
 
             # Calculate shares to trade to reach the target position
             trade_shares = target_shares - current_shares
-            print(
-                f"{latest_timestamp} - {ticker} Trade Shares: {trade_shares}"
-            )  # DEBUG
 
             if trade_shares != 0:
                 # Place the order using the base class method
-                print(
-                    f"{latest_timestamp} - Placing order for {ticker}: {trade_shares} shares"
-                )  # DEBUG
                 self.place_order(ticker, trade_shares, latest_timestamp)
-            else:
-                print(f"{latest_timestamp} - No trade needed for {ticker}")  # DEBUG
 
         # Optional: Update portfolio value after trades (often handled by the backtest loop)
         # self.portfolio.update_value(latest_timestamp)

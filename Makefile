@@ -23,11 +23,13 @@ options_analysis:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))
 	uv run python src/options_analysis.py $(ticker)
 
+# extra args are optional. They can be passed like so:
+# make news_analysis ticker AAPL ARGS="--no-llm --no-news"
 news_analysis:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))	
 	$(if $(ticker),\
-		uv run python -m src.agent.finance_agent_run ticker $(ticker),\
-		uv run python -m src.agent.finance_agent_run all)
+		uv run python src/agent/finance_agent_run.py ticker $(ticker) $(ARGS),\
+		uv run python src/agent/finance_agent_run.py all $(ARGS))
 
 combined_signals:
 	$(eval ticker=$(word 2,$(MAKECMDGOALS)))

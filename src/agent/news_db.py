@@ -98,6 +98,11 @@ def create_news_db(db_name="finance_news.db"):
     )
     """)
 
+    # Add index on ticker column in news_articles table
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_news_articles_ticker ON news_articles(ticker)
+    """)
+
     conn.commit()
     conn.close()
 

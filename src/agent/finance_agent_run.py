@@ -1,12 +1,9 @@
-import json
 import logging
 import os
 from datetime import datetime
-from pathlib import Path
 
 import click
 from dotenv import load_dotenv
-
 from finance_news_agent import FinanceNewsAgent
 from news_db import create_news_db
 
@@ -188,7 +185,9 @@ def analyze_all_tickers(
     help="Path to file with ticker symbols",
     show_default=True,
 )
-@click.option("--output-file", help="Optional path to save results (deprecated)", default=None)
+@click.option(
+    "--output-file", help="Optional path to save results (deprecated)", default=None
+)
 @click.option(
     "--db-path",
     default=os.getenv("DB_PATH", "finance_news.db"),
@@ -253,49 +252,55 @@ def analyze_single_ticker(
     # If using database, fetch and display the latest analysis
     if use_db:
         click.echo("\n===== ANALYSIS RESULTS =====\n")
-        
+
         # Get latest news
         news = agent._get_latest_news(ticker, limit=max_articles)
         if news:
             click.echo(f"Latest news for {ticker} ({len(news)} articles):")
             for i, article in enumerate(news, 1):
                 click.echo(f"\n[{i}] {article['title']}")
-                click.echo(f"Source: {article['source']} | Date: {article['publish_date']}")
-                if article.get('url'):
+                click.echo(
+                    f"Source: {article['source']} | Date: {article['publish_date']}"
+                )
+                if article.get("url"):
                     click.echo(f"URL: {article['url']}")
-                if article.get('summary'):
+                if article.get("summary"):
                     click.echo(f"Summary: {article['summary'][:150]}...")
 
         # If LLM analysis was enabled, show the analysis results
         if analyze_with_llm:
             analysis = agent._get_latest_analysis(ticker)
             if analysis:
-                click.echo(f"\nAnalysis Summary:")
+                click.echo("\nAnalysis Summary:")
                 click.echo(f"Summary: {analysis['summary']}")
-                
-                if analysis.get('key_points'):
+
+                if analysis.get("key_points"):
                     click.echo("\nKey Points:")
-                    for point in analysis['key_points']:
+                    for point in analysis["key_points"]:
                         click.echo(f"- {point}")
-                
-                sentiment = analysis.get('sentiment', 'neutral')
+
+                sentiment = analysis.get("sentiment", "neutral")
                 if sentiment == "bullish":
                     sentiment_str = click.style(sentiment, fg="green")
                 elif sentiment == "bearish":
                     sentiment_str = click.style(sentiment, fg="red")
                 else:
                     sentiment_str = click.style(sentiment, fg="yellow")
-                
+
                 click.echo(f"\nSentiment: {sentiment_str}")
                 click.echo(f"Confidence: {analysis.get('confidence', 'low')}")
-                
-                if analysis.get('financial_implications'):
-                    click.echo(f"Financial Implications: {analysis['financial_implications']}")
+
+                if analysis.get("financial_implications"):
+                    click.echo(
+                        f"Financial Implications: {analysis['financial_implications']}"
+                    )
             else:
                 click.echo("\nNo analysis results found in database.")
         else:
-            click.echo("\nLLM analysis was disabled. News articles have been stored in the database.")
-    
+            click.echo(
+                "\nLLM analysis was disabled. News articles have been stored in the database."
+            )
+
     click.echo(f"\nProcessing time: {duration:.2f} seconds")
 
 

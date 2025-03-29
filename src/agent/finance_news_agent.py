@@ -9,16 +9,14 @@ insights and summarize key information.
 import json
 import logging
 import os
-import re  # Added for regex parsing of JSON
 import sqlite3
-from datetime import datetime, timedelta
-from pathlib import Path
+import time
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
-from tqdm import tqdm
-
 from finhub_util import fetch_news_finnhub
+from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -168,9 +166,11 @@ class FinanceNewsAgent:
         """
         # Basic validation and filtering
         valid_articles = [
-            article for article in news_data 
-            if isinstance(article, dict) and (article.get("title") or article.get("headline"))
-        ][:self.max_articles_per_ticker]
+            article
+            for article in news_data
+            if isinstance(article, dict)
+            and (article.get("title") or article.get("headline"))
+        ][: self.max_articles_per_ticker]
 
         if not valid_articles:
             logger.warning(f"No valid news articles for {ticker}")
@@ -181,7 +181,7 @@ class FinanceNewsAgent:
             f"{i}. {article.get('title', article.get('headline'))}"
             for i, article in enumerate(valid_articles, 1)
         ]
-        
+
         context = f"Recent news about {ticker}:\n\n" + "\n".join(article_summaries)
 
         # Add minimal financial data if available
@@ -220,16 +220,15 @@ CONFIDENCE: (high/medium/low)"""
                     "temperature": 0.3,
                     "max_tokens": 500,
                 },
-                timeout=30  # Add timeout to prevent hanging
+                timeout=30,  # Add timeout to prevent hanging
             )
 
             response.raise_for_status()  # Raise exception for non-200 status codes
-            
+
             # Extract the content from the response
-            content = (response.json()
-                      .get("choices", [{}])[0]
-                      .get("message", {}).get("content", "") 
-                      or response.json().get("choices", [{}])[0].get("text", ""))
+            content = response.json().get("choices", [{}])[0].get("message", {}).get(
+                "content", ""
+            ) or response.json().get("choices", [{}])[0].get("text", "")
 
             if not content:
                 return self._create_error_response(ticker, "Empty response from LLM")
@@ -242,7 +241,7 @@ CONFIDENCE: (high/medium/low)"""
                 "key_points": [],
                 "sentiment": "neutral",
                 "confidence": "low",
-                "financial_implications": "Limited impact on stock price expected"
+                "financial_implications": "Limited impact on stock price expected",
             }
 
             # Define section markers and their end markers
@@ -250,7 +249,7 @@ CONFIDENCE: (high/medium/low)"""
                 "SUMMARY:": ["KEY POINTS:", "SENTIMENT:", "CONFIDENCE:"],
                 "KEY POINTS:": ["SENTIMENT:", "CONFIDENCE:"],
                 "SENTIMENT:": ["CONFIDENCE:"],
-                "CONFIDENCE:": []
+                "CONFIDENCE:": [],
             }
 
             # Extract each section
@@ -262,26 +261,30 @@ CONFIDENCE: (high/medium/low)"""
                         marker_idx = content.find(marker, start_idx)
                         if marker_idx != -1:
                             end_idx = min(end_idx, marker_idx)
-                    
+
                     value = content[start_idx:end_idx].strip()
-                    
+
                     # Process each section type
                     if section == "SUMMARY:":
                         analysis_result["summary"] = value
                     elif section == "KEY POINTS:":
                         analysis_result["key_points"] = [
-                            p.strip("- ").strip() 
-                            for p in value.split("\n") 
+                            p.strip("- ").strip()
+                            for p in value.split("\n")
                             if p.strip().startswith("-")
                         ]
                     elif section == "SENTIMENT:":
                         value = value.lower()
                         if "bull" in value:
                             analysis_result["sentiment"] = "bullish"
-                            analysis_result["financial_implications"] = "Potentially positive impact on stock price"
+                            analysis_result["financial_implications"] = (
+                                "Potentially positive impact on stock price"
+                            )
                         elif "bear" in value:
                             analysis_result["sentiment"] = "bearish"
-                            analysis_result["financial_implications"] = "Potentially negative impact on stock price"
+                            analysis_result["financial_implications"] = (
+                                "Potentially negative impact on stock price"
+                            )
                     elif section == "CONFIDENCE:":
                         value = value.lower()
                         if "high" in value:
@@ -307,7 +310,7 @@ CONFIDENCE: (high/medium/low)"""
             "key_points": [],
             "sentiment": "neutral",
             "confidence": "low",
-            "articles_analyzed": 0
+            "articles_analyzed": 0,
         }
 
     def _safe_extract(self, data: Dict, key: str, fallbacks: List[str] = None) -> Any:
@@ -335,14 +338,17 @@ CONFIDENCE: (high/medium/low)"""
                 timestamp = datetime.now().isoformat()
 
                 # Use UPSERT (INSERT OR REPLACE) instead of separate INSERT/UPDATE
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT OR REPLACE INTO tickers 
                     (ticker, name, industry, last_updated)
                     VALUES (?, 
                             COALESCE(?, (SELECT name FROM tickers WHERE ticker = ?)), 
                             COALESCE(?, (SELECT industry FROM tickers WHERE ticker = ?)),
                             ?)
-                """, (ticker, name, ticker, industry, ticker, timestamp))
+                """,
+                    (ticker, name, ticker, industry, ticker, timestamp),
+                )
 
                 conn.commit()
                 logger.debug(f"Stored/updated ticker info for {ticker}")
@@ -638,6 +644,39 @@ CONFIDENCE: (high/medium/low)"""
             logger.error(f"Error getting tickers with analysis: {e}")
             return []
 
+    def _get_last_processed_time(self, ticker: str) -> Optional[datetime]:
+        """
+        Get the datetime when a ticker was last processed by checking the news_articles table.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            datetime object of last processing time or None if ticker hasn't been processed
+        """
+        if not self.use_db:
+            return None
+
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+
+                cursor.execute(
+                    """SELECT MAX(fetched_at) FROM news_articles 
+                       WHERE ticker = ?""",
+                    (ticker,),
+                )
+
+                result = cursor.fetchone()
+                if result and result[0]:
+                    # Convert ISO format string to datetime object
+                    return datetime.fromisoformat(result[0])
+                return None
+
+        except Exception as e:
+            logger.error(f"Error getting last processed time for {ticker}: {e}")
+            return None
+
     def process_ticker(self, ticker: str) -> None:
         """
         Process a single ticker - fetch news and analyze it.
@@ -692,10 +731,24 @@ CONFIDENCE: (high/medium/low)"""
             max_tickers: Maximum number of tickers to process (for limiting runtime)
         """
         # Limit the number of tickers if specified
-        tickers_to_process = self.tickers[:max_tickers] if max_tickers and max_tickers > 0 else self.tickers
+        tickers_to_process = (
+            self.tickers[:max_tickers]
+            if max_tickers and max_tickers > 0
+            else self.tickers
+        )
         logger.info(f"Processing {len(tickers_to_process)} tickers")
 
         for ticker in tqdm(tickers_to_process, desc="Processing tickers"):
+            last_processed = self._get_last_processed_time(ticker)
+            if (
+                last_processed
+                and (datetime.now() - last_processed).total_seconds() < 86400
+            ):  # 86400 seconds in 24 hours
+                logger.info(
+                    f"Skipping {ticker} as it was processed in the last 24 hours."
+                )
+                continue
+            time.sleep(3)  # Add a delay of 3 seconds before processing each ticker
             self.process_ticker(ticker)
 
         logger.info("Completed processing all tickers")

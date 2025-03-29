@@ -1,8 +1,8 @@
 from typing import Dict, Type
 
 from signals.base_signal import BaseSignal
-# from signals.macd_signal import MACDSignal
-# from signals.obv_signal import OBVSignal
+from signals.macd_signal import MACDSignal
+from signals.obv_signal import OBVSignal
 from signals.rsi_signal import RSISignal
 
 
@@ -11,8 +11,8 @@ class SignalFactory:
 
     _signal_classes: Dict[str, Type[BaseSignal]] = {
         "rsi": RSISignal,
-        # "macd": MACDSignal,
-        # "obv": OBVSignal,
+        "macd": MACDSignal,
+        "obv": OBVSignal,
     }
 
     @classmethod

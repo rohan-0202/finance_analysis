@@ -1,0 +1,6 @@
+TIMESTAMP = "timestamp"
+TICKER = "ticker"
+OPEN = "open"
+HIGH = "high"
+LOW = "low"
+CLOSE = "close"

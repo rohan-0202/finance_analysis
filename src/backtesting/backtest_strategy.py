@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
+from backtesting.strategies.df_columns import TICKER, TIMESTAMP
 from backtesting.strategy import Strategy
 from db_util import get_historical_data
 
@@ -158,7 +159,7 @@ class Backtest:
                     )
 
                 # Add Ticker column
-                ticker_data["ticker"] = ticker
+                ticker_data[TICKER] = ticker
 
                 # Reset index to prepare for MultiIndex
                 ticker_data = ticker_data.reset_index()
@@ -177,17 +178,17 @@ class Backtest:
         combined_data = pd.concat(all_data, ignore_index=True)
 
         # Ensure 'timestamp' is tz-aware (UTC)
-        combined_data["timestamp"] = pd.to_datetime(combined_data["timestamp"])
+        combined_data[TIMESTAMP] = pd.to_datetime(combined_data[TIMESTAMP])
 
         # Apply timezone info safely - handle both timezone-naive and aware datetimes
         timestamps = []
-        for ts in combined_data["timestamp"]:
+        for ts in combined_data[TIMESTAMP]:
             timestamps.append(ensure_utc_tz(ts))
 
-        combined_data["timestamp"] = timestamps
+        combined_data[TIMESTAMP] = timestamps
 
         # Create MultiIndex - rename to capital T Timestamp for compatibility with RSIStrategy
-        combined_data = combined_data.set_index(["timestamp", "ticker"])
+        combined_data = combined_data.set_index([TIMESTAMP, TICKER])
 
         # Sort by timestamp and ticker
         combined_data = combined_data.sort_index()
@@ -212,7 +213,7 @@ class Backtest:
         pd.Series
             Series with benchmark values
         """
-        if benchmark_ticker not in all_data.index.get_level_values("ticker").unique():
+        if benchmark_ticker not in all_data.index.get_level_values(TICKER).unique():
             return pd.Series(dtype=float)  # Empty series
 
         # Get first timestamp in actual backtest (not buffer)
@@ -221,7 +222,7 @@ class Backtest:
 
         try:
             # Get prices for the benchmark ticker
-            benchmark_prices = all_data.xs(benchmark_ticker, level="ticker")["close"]
+            benchmark_prices = all_data.xs(benchmark_ticker, level=TICKER)["close"]
 
             # Find closest timestamp at or after backtest start
             start_idx = benchmark_prices.index.searchsorted(backtest_start)
@@ -321,10 +322,10 @@ class Backtest:
         # Get unique timestamps within the actual backtest period (not buffer)
         backtest_timestamps = (
             all_data[
-                (all_data.index.get_level_values("timestamp") >= start_date)
-                & (all_data.index.get_level_values("timestamp") <= end_date)
+                (all_data.index.get_level_values(TIMESTAMP) >= start_date)
+                & (all_data.index.get_level_values(TIMESTAMP) <= end_date)
             ]
-            .index.get_level_values("timestamp")
+            .index.get_level_values(TIMESTAMP)
             .unique()
         )
 
@@ -348,13 +349,13 @@ class Backtest:
 
             # Provide data up to and including the current timestamp
             data_slice = all_data[
-                all_data.index.get_level_values("timestamp") <= current_timestamp
+                all_data.index.get_level_values(TIMESTAMP) <= current_timestamp
             ]
 
             if not data_slice.empty:
                 # Get the latest prices for all tickers at this timestamp
                 try:
-                    latest_data = data_slice.xs(current_timestamp, level="timestamp")
+                    latest_data = data_slice.xs(current_timestamp, level=TIMESTAMP)
                     # Update portfolio's current prices
                     for ticker, row in latest_data.iterrows():
                         if (
@@ -544,13 +545,13 @@ class Backtest:
             # Show 5 most recent trades
             if len(trades_df) > 0:
                 print("\nRECENT TRADES:")
-                recent_trades = trades_df.sort_values(
-                    "timestamp", ascending=False
-                ).head(5)
+                recent_trades = trades_df.sort_values(TIMESTAMP, ascending=False).head(
+                    5
+                )
                 for _, trade in recent_trades.iterrows():
-                    ts = pd.Timestamp(trade["timestamp"]).strftime("%Y-%m-%d")
+                    ts = pd.Timestamp(trade[TIMESTAMP]).strftime("%Y-%m-%d")
                     direction = trade["direction"]
-                    ticker = trade["ticker"]
+                    ticker = trade[TICKER]
                     quantity = abs(trade["quantity"])
                     price = trade["price"]
                     value = abs(trade["value"])

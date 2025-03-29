@@ -7,9 +7,9 @@ from typing import Dict, List
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import the relevant functions from the RSI, MACD, and OBV modules
-from macd import get_latest_macd_signal
-from obv import get_latest_obv_signal
-from rsi import get_latest_rsi_signal
+from signals.macd import get_latest_macd_signal
+from signals.obv import get_latest_obv_signal
+from signals.rsi import get_latest_rsi_signal
 
 
 def get_combined_signals(
@@ -281,9 +281,9 @@ def print_ticker_details(ticker: str, db_name: str = "stock_data.db", days: int 
     days : int, default=365
         Number of days of historical data to use
     """
-    from macd import calculate_macd
-    from obv import calculate_ticker_obv, get_obv_status_text
-    from rsi import calculate_ticker_rsi
+    from signals.macd import calculate_macd
+    from signals.obv import calculate_ticker_obv, get_obv_status_text
+    from signals.rsi import calculate_ticker_rsi
 
     print(f"\n=== DETAILED ANALYSIS FOR {ticker} ===")
 

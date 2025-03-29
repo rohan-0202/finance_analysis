@@ -10,10 +10,10 @@ import seaborn as sns
 from matplotlib.gridspec import GridSpec
 
 # Import functions from macd.py, rsi.py, and obv.py
-from macd import (calculate_macd, get_latest_macd_signal, get_macd_crossovers,
+from signals.macd import (calculate_macd, get_latest_macd_signal, get_macd_crossovers,
                   get_signal_stats_text)
-from rsi import calculate_ticker_rsi, get_latest_rsi_signal, get_rsi_signals
-from obv import calculate_ticker_obv, get_latest_obv_signal
+from signals.rsi import calculate_ticker_rsi, get_latest_rsi_signal, get_rsi_signals
+from signals.obv import calculate_ticker_obv, get_latest_obv_signal
 
 # Suppress pandas warnings
 warnings.filterwarnings("ignore", category=FutureWarning)

@@ -86,4 +86,5 @@ docstring-code-format = false
 dev-dependencies = [
     "isort>=6.0.1",
     "ruff>=0.9.9",
+    "pytest>=8.0.0",
 ]

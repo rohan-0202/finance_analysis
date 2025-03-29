@@ -8,6 +8,9 @@ lint:
 lint-fix:
 	uv run ruff check --fix .	
 
+test:
+	uv run pytest
+
 get_data:
 	uv run python src/data_insertion.py
 

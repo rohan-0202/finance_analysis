@@ -8,7 +8,7 @@ It handles the dynamic loading of strategy classes from their respective files.
 import importlib.util
 import inspect
 import os
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Type
 
 from backtesting.portfolio import Portfolio
 from backtesting.strategy import Strategy
@@ -184,7 +184,7 @@ class StrategyFactory:
         strategy_class = StrategyFactory.get_strategy_class(strategy_name)
         
         # Check if the strategy has a get_default_parameters class method
-        if hasattr(strategy_class, "get_default_parameters") and callable(getattr(strategy_class, "get_default_parameters")):
+        if hasattr(strategy_class, "get_default_parameters") and callable(strategy_class.get_default_parameters):
             return strategy_class.get_default_parameters()
             
         # If no defaults are provided, return an empty dict

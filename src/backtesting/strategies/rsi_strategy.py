@@ -12,11 +12,10 @@ The strategy is based on the following principles:
 
 from typing import Dict
 
-import matplotlib.pyplot as plt
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
-from backtesting.strategies.df_columns import CLOSE, HIGH, LOW, OPEN, TICKER, TIMESTAMP
+from backtesting.strategies.df_columns import CLOSE, TICKER, TIMESTAMP
 from backtesting.strategy import Strategy
 from signals.rsi_signal import RSISignal
 from signals.signal_factory import SignalFactory

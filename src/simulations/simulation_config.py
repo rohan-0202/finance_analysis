@@ -1,9 +1,8 @@
 import json
 import os
 from datetime import datetime
-from enum import Enum, auto
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import (
     BaseModel,
@@ -575,12 +574,12 @@ class SimulationConfig:
                 # Create a descriptive ID
                 param_desc = "_".join(
                     f"{name.split('.')[-1]}_{value}"
-                    for name, value in zip(param_names, combination)
+                    for name, value in zip(param_names, combination, strict=False)
                 )
                 run_dict["id"] = f"{sweep.output_prefix}{i}_{param_desc}"
 
                 # Set all parameter values
-                for path, value in zip(param_names, combination):
+                for path, value in zip(param_names, combination, strict=False):
                     self._set_nested_value(run_dict, path, value)
 
                 # Adjust the output path
@@ -909,7 +908,7 @@ if __name__ == "__main__":
                 else:
                     # Simple comparison for lists of primitives or simple dicts
                     # More complex list comparison might be needed for nested structures
-                    for i, (item1, item2) in enumerate(zip(val1, val2)):
+                    for i, (item1, item2) in enumerate(zip(val1, val2, strict=False)):
                         item_path = f"{new_path}[{i}]"
                         if isinstance(item1, dict) and isinstance(item2, dict):
                             compare_dicts(item1, item2, item_path)

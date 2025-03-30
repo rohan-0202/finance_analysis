@@ -15,7 +15,7 @@ from typing import Dict
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
-from backtesting.strategies.df_columns import CLOSE, TICKER, TIMESTAMP
+from common.df_columns import CLOSE, TICKER, TIMESTAMP
 from backtesting.strategy import Strategy
 from signals.rsi_signal import RSISignal
 from signals.signal_factory import SignalFactory

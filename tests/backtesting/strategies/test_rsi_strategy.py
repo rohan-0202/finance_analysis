@@ -7,7 +7,7 @@ import pytest
 # Assuming Portfolio, RSISignal, SignalFactory are importable from these locations
 # Adjust paths if necessary based on your project structure
 from src.backtesting.portfolio import Portfolio
-from src.backtesting.strategies.df_columns import TICKER, TIMESTAMP
+from common.df_columns import TICKER, TIMESTAMP
 from src.backtesting.strategies.rsi_strategy import RSIStrategy
 from src.signals.rsi_signal import RSISignal
 

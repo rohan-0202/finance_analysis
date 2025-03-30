@@ -68,7 +68,8 @@ class RSIMACDStrategy(Strategy):
         self.rsi_signal.overbought = self.parameters["overbought_threshold"]
         self.rsi_signal.oversold = self.parameters["oversold_threshold"]
 
-        rsi_series = self.rsi_signal.calculate_rsi(ticker_data)
+        # Call the correct helper method to calculate RSI from the series
+        rsi_series = self.rsi_signal._calculate_rsi_from_series(ticker_data)
 
         if rsi_series.empty or pd.isna(rsi_series.iloc[-1]):
             return 0.0  # RSI calculation failed or latest is NaN

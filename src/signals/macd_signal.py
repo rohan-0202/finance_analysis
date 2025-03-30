@@ -28,42 +28,42 @@ class MACDSignal(BaseSignal):
         self.slow_period = slow_period
         self.signal_period = signal_period
 
-    # def calculate_macd(self, series: pd.Series) -> pd.DataFrame:
-    #     """
-    #     Calculate the MACD for a price series.
-    #
-    #     Parameters:
-    #     -----------
-    #     series : pd.Series
-    #         Price series (typically close prices)
-    #
-    #     Returns:
-    #     --------
-    #     pd.DataFrame: DataFrame containing MACD values, signal line, and histogram
-    #     """
-    #     # Calculate EMAs
-    #     ema_fast = series.ewm(span=self.fast_period, adjust=False).mean()
-    #     ema_slow = series.ewm(span=self.slow_period, adjust=False).mean()
-    #
-    #     # Calculate MACD line
-    #     macd_line = ema_fast - ema_slow
-    #
-    #     # Calculate signal line
-    #     signal_line = macd_line.ewm(span=self.signal_period, adjust=False).mean()
-    #
-    #     # Calculate histogram
-    #     histogram = macd_line - signal_line
-    #
-    #     # Create DataFrame with results
-    #     macd_data = pd.DataFrame(
-    #         {
-    #             "macd": macd_line,
-    #             "signal": signal_line,
-    #             "histogram": histogram,
-    #         }
-    #     )
-    #
-    #     return macd_data
+    def calculate_macd(self, series: pd.Series) -> pd.DataFrame:
+        """
+        Calculate the MACD for a price series.
+
+        Parameters:
+        -----------
+        series : pd.Series
+            Price series (typically close prices)
+
+        Returns:
+        --------
+        pd.DataFrame: DataFrame containing MACD values, signal line, and histogram
+        """
+        # Calculate EMAs
+        ema_fast = series.ewm(span=self.fast_period, adjust=False).mean()
+        ema_slow = series.ewm(span=self.slow_period, adjust=False).mean()
+
+        # Calculate MACD line
+        macd_line = ema_fast - ema_slow
+
+        # Calculate signal line
+        signal_line = macd_line.ewm(span=self.signal_period, adjust=False).mean()
+
+        # Calculate histogram
+        histogram = macd_line - signal_line
+
+        # Create DataFrame with results
+        macd_data = pd.DataFrame(
+            {
+                "macd": macd_line,
+                "signal": signal_line,
+                "histogram": histogram,
+            }
+        )
+
+        return macd_data
 
     def calculate_indicator(
         self, ticker_symbol: str, db_name: str = "stock_data.db", days: int = 365

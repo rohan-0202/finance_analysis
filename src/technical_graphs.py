@@ -32,7 +32,7 @@ def plot_indicators(
     oversold: int = 30,
     obv_window: int = 20,
     db_name: str = "stock_data.db",
-    days: int = 365,
+    days: int = 365 * 5,
     save_path: Optional[str] = None,
     theme: str = "darkgrid",
     color_palette: str = "muted",
@@ -87,7 +87,9 @@ def plot_indicators(
     obv_signal = SignalFactory.create_signal("obv", window=obv_window)
 
     # Get indicator data
-    price_data, macd_data = macd_signal.calculate_indicator(ticker_symbol, db_name, days)
+    price_data, macd_data = macd_signal.calculate_indicator(
+        ticker_symbol, db_name, days
+    )
     _, rsi_data = rsi_signal.calculate_indicator(ticker_symbol, db_name, days)
     _, obv_data = obv_signal.calculate_indicator(ticker_symbol, db_name, days)
 
@@ -107,7 +109,10 @@ def plot_indicators(
 
     # Get signals for indicators
     macd_signals = macd_signal.get_signals(ticker_symbol, db_name, days)
-    macd_crossovers = [(s["date"], "bullish" if s["type"] == "buy" else "bearish") for s in macd_signals]
+    macd_crossovers = [
+        (s["date"], "bullish" if s["type"] == "buy" else "bearish")
+        for s in macd_signals
+    ]
 
     # Get RSI signals
     rsi_signals = rsi_signal.get_signals(ticker_symbol, db_name, days)
@@ -334,11 +339,13 @@ def plot_indicators(
     bullish_count = sum(1 for s in macd_signals if s["type"] == "buy")
     bearish_count = sum(1 for s in macd_signals if s["type"] == "sell")
     latest_macd = macd_signal.get_latest_signal(ticker_symbol, db_name, days)
-    
+
     macd_stats = f"Bullish: {bullish_count}, Bearish: {bearish_count}\n"
     if latest_macd:
         days_ago = (datetime.now().date() - latest_macd["date"].date()).days
-        macd_stats += f"Latest: {latest_macd['type'].capitalize()} ({days_ago} days ago)"
+        macd_stats += (
+            f"Latest: {latest_macd['type'].capitalize()} ({days_ago} days ago)"
+        )
 
     ax2.annotate(
         macd_stats,

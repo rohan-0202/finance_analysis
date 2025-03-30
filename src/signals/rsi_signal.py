@@ -80,13 +80,48 @@ class RSISignal(BaseSignal):
             # Get historical data
             price_data = get_historical_data(ticker_symbol, db_name, days)
 
+            # --- Data Cleaning Start ---
+            if price_data is None or price_data.empty:
+                print(f"No historical data found for {ticker_symbol}")
+                return None, None
+
+            # Ensure index is datetime and remove NaT values
+            price_data.index = pd.to_datetime(price_data.index, errors="coerce")
+            initial_count = len(price_data)
+            price_data = price_data.loc[price_data.index.notna()]
+            if len(price_data) < initial_count:
+                print(
+                    f"Warning: Removed {initial_count - len(price_data)} rows with invalid timestamps for {ticker_symbol}"
+                )
+
+            # Remove any potential remaining duplicate index entries
+            if price_data.index.has_duplicates:
+                print(
+                    f"Warning: Found duplicate timestamps for {ticker_symbol}. Keeping first entry."
+                )
+                price_data = price_data[~price_data.index.duplicated(keep="first")]
+
+            if price_data.empty:
+                print(
+                    f"No valid historical data remaining for {ticker_symbol} after cleaning."
+                )
+                return None, None
+            # --- Data Cleaning End ---
+
+            # Check if we have enough data after cleaning
+            if len(price_data) < self.window:
+                print(
+                    f"Insufficient data ({len(price_data)} points) for RSI calculation (window: {self.window}) for {ticker_symbol}"
+                )
+                return price_data, None  # Return price data but None for RSI
+
             # Calculate RSI
             rsi_data = self.calculate_rsi(price_data["close"])
 
-            # Drop NaN values caused by RSI calculation
+            # Drop NaN values caused by RSI calculation (at the beginning of the series)
             rsi_data = rsi_data.dropna()
 
-            # Align price_data with rsi_data to have the same dates
+            # Align price_data with rsi_data AFTER cleaning and RSI calculation
             price_data = price_data.loc[rsi_data.index]
 
             return price_data, rsi_data

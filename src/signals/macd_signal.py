@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional, Tuple, cast
 
 import pandas as pd
@@ -9,6 +10,9 @@ from signals.base_signal import BaseSignal, SignalData
 class MACDSignalData(SignalData):
     """MACD-specific signal data."""
 
+    date: datetime
+    type: str
+    price: float
     macd: float
     signal: float
 
@@ -78,12 +82,33 @@ class MACDSignal(BaseSignal):
         Returns:
         --------
         tuple: (price_data, macd_data)
-            - price_data: DataFrame with original price data
+            - price_data: DataFrame with original price data (cleaned)
             - macd_data: DataFrame with MACD values
         """
         try:
             # Get historical data
             price_data = get_historical_data(ticker_symbol, db_name, days)
+
+            # --- Start Data Cleaning ---
+            if price_data is None or price_data.empty:
+                print(f"No data found for {ticker_symbol}")
+                return None, None
+
+            # Ensure index is datetime and remove NaT indices
+            price_data.index = pd.to_datetime(price_data.index, errors="coerce")
+            price_data = price_data[pd.notna(price_data.index)]
+
+            # Ensure required columns exist and remove rows with NaNs in critical columns
+            required_cols = ["close"]  # Only 'close' is needed for basic MACD
+            if not all(col in price_data.columns for col in required_cols):
+                print(f"Missing required column ('close') for {ticker_symbol}")
+                return None, None
+            price_data = price_data.dropna(subset=required_cols)
+
+            if price_data.empty:
+                print(f"Insufficient valid data after cleaning for {ticker_symbol}")
+                return None, None
+            # --- End Data Cleaning ---
 
             # Calculate MACD
             macd_data = self.calculate_macd(price_data["close"])
@@ -92,7 +117,14 @@ class MACDSignal(BaseSignal):
             macd_data = macd_data.dropna()
 
             # Align price_data with macd_data to have the same dates
-            price_data = price_data.loc[macd_data.index]
+            # Ensure index intersection is handled correctly
+            common_index = price_data.index.intersection(macd_data.index)
+            price_data = price_data.loc[common_index]
+            macd_data = macd_data.loc[common_index]
+
+            if price_data.empty or macd_data.empty:
+                print(f"No overlapping data after MACD calculation for {ticker_symbol}")
+                return None, None
 
             return price_data, macd_data
 
@@ -124,6 +156,15 @@ class MACDSignal(BaseSignal):
         if macd_data is None or len(macd_data) == 0:
             return []
 
+        # Check data validity after calculation and cleaning
+        if (
+            price_data is None
+            or price_data.empty
+            or macd_data is None
+            or macd_data.empty
+        ):
+            return []
+
         # Identify crossover points
         buy_signals = (macd_data["macd"] > macd_data["signal"]) & (
             macd_data["macd"].shift() <= macd_data["signal"].shift()
@@ -137,33 +178,37 @@ class MACDSignal(BaseSignal):
 
         # Process buy signals
         for date in macd_data[buy_signals].index:
-            signals.append(
-                cast(
-                    MACDSignalData,
-                    {
-                        "date": date,
-                        "type": "buy",
-                        "macd": macd_data.loc[date, "macd"],
-                        "signal": macd_data.loc[date, "signal"],
-                        "price": price_data.loc[date, "close"],
-                    },
+            # Add explicit check for NaT, although cleaning should prevent this
+            if pd.notna(date):
+                signals.append(
+                    cast(
+                        MACDSignalData,
+                        {
+                            "date": date.to_pydatetime(),  # Convert to standard datetime
+                            "type": "buy",
+                            "macd": macd_data.loc[date, "macd"],
+                            "signal": macd_data.loc[date, "signal"],
+                            "price": price_data.loc[date, "close"],
+                        },
+                    )
                 )
-            )
 
         # Process sell signals
         for date in macd_data[sell_signals].index:
-            signals.append(
-                cast(
-                    MACDSignalData,
-                    {
-                        "date": date,
-                        "type": "sell",
-                        "macd": macd_data.loc[date, "macd"],
-                        "signal": macd_data.loc[date, "signal"],
-                        "price": price_data.loc[date, "close"],
-                    },
+            # Add explicit check for NaT
+            if pd.notna(date):
+                signals.append(
+                    cast(
+                        MACDSignalData,
+                        {
+                            "date": date.to_pydatetime(),  # Convert to standard datetime
+                            "type": "sell",
+                            "macd": macd_data.loc[date, "macd"],
+                            "signal": macd_data.loc[date, "signal"],
+                            "price": price_data.loc[date, "close"],
+                        },
+                    )
                 )
-            )
 
         # Sort signals by date
         signals.sort(key=lambda x: x["date"])
@@ -227,4 +272,4 @@ class MACDSignal(BaseSignal):
             else:
                 status_text += "Status: BEARISH - Momentum increasing"
 
-        return status_text 
+        return status_text

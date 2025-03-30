@@ -1,7 +1,17 @@
+from typing import TypedDict
+
 from backtesting.strategies.strategyutils.volatililty_utils import VolatilityRegime
 
 
-def get_rsi_parameters(regime: VolatilityRegime) -> dict:
+# Define the TypedDict for RSI parameters
+class RsiParams(TypedDict):
+    rsi_period: int
+    oversold_threshold: int
+    overbought_threshold: int
+    position_size_multiplier: float
+
+
+def get_rsi_parameters(regime: VolatilityRegime) -> RsiParams:
     """
     Get RSI parameters appropriate for the current volatility regime.
 
@@ -12,10 +22,10 @@ def get_rsi_parameters(regime: VolatilityRegime) -> dict:
 
     Returns:
     --------
-    dict
-        Dictionary of RSI parameters
+    RsiParams
+        Dictionary of RSI parameters conforming to the RsiParams structure
     """
-    params = {
+    params: dict[VolatilityRegime, RsiParams] = {
         VolatilityRegime.LOW: {
             "rsi_period": 14,
             "oversold_threshold": 45,

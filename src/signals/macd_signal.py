@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple, cast
 
 import pandas as pd
+import ta  # Add the ta library import
 
 from db_util import get_historical_data
 from signals.base_signal import BaseSignal, SignalData
@@ -27,42 +28,42 @@ class MACDSignal(BaseSignal):
         self.slow_period = slow_period
         self.signal_period = signal_period
 
-    def calculate_macd(self, series: pd.Series) -> pd.DataFrame:
-        """
-        Calculate the MACD for a price series.
-
-        Parameters:
-        -----------
-        series : pd.Series
-            Price series (typically close prices)
-
-        Returns:
-        --------
-        pd.DataFrame: DataFrame containing MACD values, signal line, and histogram
-        """
-        # Calculate EMAs
-        ema_fast = series.ewm(span=self.fast_period, adjust=False).mean()
-        ema_slow = series.ewm(span=self.slow_period, adjust=False).mean()
-
-        # Calculate MACD line
-        macd_line = ema_fast - ema_slow
-
-        # Calculate signal line
-        signal_line = macd_line.ewm(span=self.signal_period, adjust=False).mean()
-
-        # Calculate histogram
-        histogram = macd_line - signal_line
-
-        # Create DataFrame with results
-        macd_data = pd.DataFrame(
-            {
-                "macd": macd_line,
-                "signal": signal_line,
-                "histogram": histogram,
-            }
-        )
-
-        return macd_data
+    # def calculate_macd(self, series: pd.Series) -> pd.DataFrame:
+    #     """
+    #     Calculate the MACD for a price series.
+    #
+    #     Parameters:
+    #     -----------
+    #     series : pd.Series
+    #         Price series (typically close prices)
+    #
+    #     Returns:
+    #     --------
+    #     pd.DataFrame: DataFrame containing MACD values, signal line, and histogram
+    #     """
+    #     # Calculate EMAs
+    #     ema_fast = series.ewm(span=self.fast_period, adjust=False).mean()
+    #     ema_slow = series.ewm(span=self.slow_period, adjust=False).mean()
+    #
+    #     # Calculate MACD line
+    #     macd_line = ema_fast - ema_slow
+    #
+    #     # Calculate signal line
+    #     signal_line = macd_line.ewm(span=self.signal_period, adjust=False).mean()
+    #
+    #     # Calculate histogram
+    #     histogram = macd_line - signal_line
+    #
+    #     # Create DataFrame with results
+    #     macd_data = pd.DataFrame(
+    #         {
+    #             "macd": macd_line,
+    #             "signal": signal_line,
+    #             "histogram": histogram,
+    #         }
+    #     )
+    #
+    #     return macd_data
 
     def calculate_indicator(
         self, ticker_symbol: str, db_name: str = "stock_data.db", days: int = 365
@@ -111,7 +112,20 @@ class MACDSignal(BaseSignal):
             # --- End Data Cleaning ---
 
             # Calculate MACD
-            macd_data = self.calculate_macd(price_data["close"])
+            # Use the ta library to calculate MACD
+            macd_indicator = ta.trend.MACD(
+                close=price_data["close"],
+                window_fast=self.fast_period,
+                window_slow=self.slow_period,
+                window_sign=self.signal_period,
+            )
+            # Retrieve MACD line, signal line, and histogram
+            macd = macd_indicator.macd()
+            macd_signal = macd_indicator.macd_signal()
+            macd_hist = macd_indicator.macd_diff()  # Histogram
+            macd_data = pd.DataFrame(
+                {"macd": macd, "signal": macd_signal, "histogram": macd_hist}
+            )
 
             # Drop NaN values caused by MACD calculation
             macd_data = macd_data.dropna()

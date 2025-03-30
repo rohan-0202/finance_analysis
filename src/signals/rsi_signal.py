@@ -2,6 +2,7 @@ from typing import List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
+import ta  # Add the ta library import
 
 from db_util import get_historical_data
 from signals.base_signal import BaseSignal, SignalData
@@ -21,39 +22,22 @@ class RSISignal(BaseSignal):
         self.overbought = overbought
         self.oversold = oversold
 
-    def calculate_rsi(self, series: pd.Series) -> pd.Series:
-        """
-        Calculate the Relative Strength Index (RSI) for a price series.
+    # Add a helper method to calculate RSI from a given series
+    def _calculate_rsi_from_series(self, series: pd.Series) -> pd.Series:
+        """Calculate RSI directly from a pandas Series using the configured window."""
+        if series.empty or len(series) < self.window:
+            # Return an empty series or series of NaNs matching the input index length
+            # Ensure index is preserved for alignment later
+            return pd.Series([np.nan] * len(series), index=series.index, dtype=float)
 
-        Parameters:
-        -----------
-        series : pd.Series
-            Price series (typically close prices)
-
-        Returns:
-        --------
-        pd.Series: RSI values
-        """
-        # Calculate price changes
-        delta = series.diff()
-
-        # Create separate series for gains and losses
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-
-        # Calculate average gain and average loss over the window
-        avg_gain = gain.rolling(window=self.window).mean()
-        avg_loss = loss.rolling(window=self.window).mean()
-
-        # Calculate RS (Relative Strength)
-        rs = avg_gain / avg_loss.replace(
-            0, np.finfo(float).eps
-        )  # Avoid division by zero
-
-        # Calculate RSI
-        rsi = 100 - (100 / (1 + rs))
-
-        return rsi
+        # Use the ta library to calculate RSI
+        # fillna=False prevents filling initial NaNs required for window calculation
+        rsi_indicator = ta.momentum.RSIIndicator(
+            close=series, window=self.window, fillna=False
+        )
+        rsi_data = rsi_indicator.rsi()
+        # ta might return NaNs at the start, which is expected.
+        return rsi_data
 
     def calculate_indicator(
         self, ticker_symbol: str, db_name: str = "stock_data.db", days: int = 365
@@ -116,7 +100,11 @@ class RSISignal(BaseSignal):
                 return price_data, None  # Return price data but None for RSI
 
             # Calculate RSI
-            rsi_data = self.calculate_rsi(price_data["close"])
+            # Use the ta library to calculate RSI
+            rsi_indicator = ta.momentum.RSIIndicator(
+                close=price_data["close"], window=self.window
+            )
+            rsi_data = rsi_indicator.rsi()
 
             # Drop NaN values caused by RSI calculation (at the beginning of the series)
             rsi_data = rsi_data.dropna()

@@ -415,19 +415,23 @@ class SimulationConfig:
         self.description = simulation_data.get("description", "")
         self.version = simulation_data.get("version", "1.0")
 
-        # Parse the created_at date string directly using Pydantic-like logic
+        # Parse the created_at date string, handling ISO timestamp format
         created_at_str = simulation_data.get("created_at")
-        try:
-            # Pydantic handles date parsing internally, mimic this simple approach
-            self.created_at = (
-                date.fromisoformat(created_at_str)
-                if created_at_str
-                else datetime.now().date()  # Use today's date
-            )
-        except ValueError as e:
-            raise ValueError(
-                f"Invalid date format for created_at: '{created_at_str}'. Expected YYYY-MM-DD."
-            ) from e
+        if created_at_str:
+            try:
+                # Parse the full ISO timestamp string, replacing 'Z' for compatibility
+                # Note: datetime.fromisoformat handles 'Z' in Python 3.11+,
+                # but replacing ensures broader compatibility.
+                dt_obj = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                self.created_at = dt_obj.date() # Extract just the date part
+            except ValueError as e:
+                # Raise a more informative error if parsing fails
+                raise ValueError(
+                    f"Invalid ISO format for created_at: '{created_at_str}'. Error: {e}"
+                ) from e
+        else:
+            # Use today's date if 'created_at' is missing
+            self.created_at = datetime.now().date() # Use current date
 
         # Parse data source configuration
         data_source_data = simulation_data.get("data_source", {})

@@ -1,11 +1,16 @@
 import click
 from loguru import logger
+from datetime import datetime, time
 
 from simulations.backtest_instances import get_backtest_instances
 from simulations.simulation_config import (
     SimulationConfig,
 )
 from simulations.ticker_handler import load_tickers_from_file
+# --- Imports for Backtesting ---
+from backtesting.backtest_strategy import Backtest
+from backtesting.strategies.strategy_factory import StrategyFactory
+# -----------------------------
 
 
 @click.command()
@@ -60,39 +65,60 @@ def run_simulation(config, tickers_file):
 
     logger.info(f"Generated {len(backtest_instances)} backtest instances to run.")
 
-    # Placeholder for running the actual backtests
+    # Run the actual backtests
     for i, instance in enumerate(backtest_instances):
         logger.info(
-            f"--- Preparing Backtest Instance {i + 1}/{len(backtest_instances)} ---"
+            f"--- Running Backtest Instance {i + 1}/{len(backtest_instances)} ---"
         )
         logger.info(f"Run ID: {instance.run_id}")
         logger.info(f"Strategy: {instance.strategy_name}")
         logger.info(f"Tickers: {instance.tickers}")
         logger.info(f"Period: {instance.start_date} to {instance.end_date}")
+        logger.info(f"DB: {instance.db_name}")
         logger.info(f"Output Path: {instance.output_path}")
-        # TODO: Instantiate Backtest class from backtesting.backtest_strategy
-        #       using the instance details and run it.
-        #       Ensure the Backtest class can handle `date` objects or convert them
-        #       to `datetime` just before calling its run method if needed.
-        # Example (needs adjustment based on Backtest class requirements):
-        # try:
-        #     strategy_class = StrategyFactory.get_strategy_class(instance.strategy_name)
-        #     backtester = Backtest(
-        #         # ... other params
-        #     )
-        #     # If Backtest requires datetime, convert here:
-        #     # start_dt = datetime.combine(instance.start_date, time.min)
-        #     # end_dt = datetime.combine(instance.end_date, time.min)
-        #     results = backtester.run(
-        #         tickers=instance.tickers,
-        #         start_date=instance.start_date, # or start_dt
-        #         end_date=instance.end_date,     # or end_dt
-        #         db_name=instance.db_name,
-        #         benchmark_ticker=instance.benchmark_ticker
-        #     )
-        #     # ... save results ...
-        # except Exception as e:
-        #     logger.error(f"Error running backtest instance {instance.run_id}: {e}")
+
+        try:
+            # 1. Get the strategy class from the factory
+            strategy_class = StrategyFactory.get_strategy_class(instance.strategy_name)
+
+            # 2. Instantiate the Backtest class
+            backtester = Backtest(
+                strategy_class=strategy_class,
+                strategy_params=instance.strategy_params,
+                initial_capital=instance.initial_capital,
+                commission=instance.commission,
+                allow_short_selling=instance.allow_short_selling,
+                allow_margin_trading=instance.allow_margin_trading,
+            )
+
+            # 3. Convert date objects to datetime objects (start of the day)
+            # Backtest.run expects datetime objects.
+            # Backtest internally handles timezone conversion to UTC.
+            start_dt = datetime.combine(instance.start_date, time.min)
+            end_dt = datetime.combine(instance.end_date, time.min)
+
+            # 4. Run the backtest
+            logger.info(f"Executing backtest for {instance.run_id}...")
+            results = backtester.run(
+                tickers=instance.tickers,
+                start_date=start_dt,
+                end_date=end_dt,
+                db_name=instance.db_name,
+                benchmark_ticker=instance.benchmark_ticker,
+                # Note: data_buffer_months is handled within _prepare_data using the start_date
+            )
+
+            # 5. Process results (e.g., save to instance.output_path, print summary)
+            logger.success(f"Backtest {instance.run_id} completed successfully.")
+            # Example: Print results using the backtester's method
+            backtester.print_results()
+            # TODO: Save results dictionary `results` to a file in instance.output_path
+            # TODO: Optionally save plots using backtester.plot_results()
+
+        except ValueError as ve: # Catch strategy not found errors specifically
+             logger.error(f"Configuration error for backtest instance {instance.run_id}: {ve}")
+        except Exception as e:
+            logger.error(f"Error running backtest instance {instance.run_id}: {e}", exc_info=True) # Log traceback
 
     logger.info("Simulation run finished.")
 

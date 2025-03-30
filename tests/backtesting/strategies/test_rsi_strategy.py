@@ -8,6 +8,7 @@ import pandas as pd
 from src.backtesting.portfolio import Portfolio
 from src.backtesting.strategies.rsi_strategy import RSIStrategy
 from src.signals.rsi_signal import RSISignal
+from src.backtesting.strategies.df_columns import TIMESTAMP, TICKER
 
 
 @pytest.fixture
@@ -209,7 +210,7 @@ def test_generate_signals_buy_signal(mock_create_signal, mock_portfolio):
     # Create test data with MultiIndex (Timestamp, Ticker)
     timestamps = pd.DatetimeIndex(['2023-01-01', '2023-01-02', '2023-01-03'])
     tickers = ['AAPL', 'MSFT']
-    index = pd.MultiIndex.from_product([timestamps, tickers], names=['Timestamp', 'Ticker'])
+    index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
     
     # Create DataFrame with close prices
     data = pd.DataFrame(
@@ -260,7 +261,7 @@ def test_generate_signals_sell_signal(mock_create_signal, mock_portfolio):
     # Create test data with MultiIndex (Timestamp, Ticker)
     timestamps = pd.DatetimeIndex(['2023-01-01', '2023-01-02', '2023-01-03'])
     tickers = ['AAPL', 'MSFT']
-    index = pd.MultiIndex.from_product([timestamps, tickers], names=['Timestamp', 'Ticker'])
+    index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
     
     # Create DataFrame with close prices
     data = pd.DataFrame(
@@ -302,7 +303,7 @@ def test_generate_signals_insufficient_data(mock_create_signal, mock_portfolio):
     # Create test data with only a few data points
     timestamps = pd.DatetimeIndex(['2023-01-01', '2023-01-02'])  # Only 2 data points
     tickers = ['AAPL']
-    index = pd.MultiIndex.from_product([timestamps, tickers], names=['Timestamp', 'Ticker'])
+    index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
     
     data = pd.DataFrame(
         index=index,
@@ -359,7 +360,7 @@ def test_execute_places_buy_orders(mock_create_signal, mock_portfolio):
     # Create test data
     timestamps = pd.DatetimeIndex(['2023-01-01'])
     tickers = ['AAPL']
-    index = pd.MultiIndex.from_product([timestamps, tickers], names=['Timestamp', 'Ticker'])
+    index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
     data = pd.DataFrame(
         index=index,
         data={'close': [150.0]}
@@ -399,7 +400,7 @@ def test_execute_places_sell_orders(mock_create_signal, mock_portfolio):
     # Create test data
     timestamps = pd.DatetimeIndex(['2023-01-01'])
     tickers = ['AAPL']
-    index = pd.MultiIndex.from_product([timestamps, tickers], names=['Timestamp', 'Ticker'])
+    index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
     data = pd.DataFrame(
         index=index,
         data={'close': [150.0]}
@@ -437,7 +438,7 @@ def test_execute_no_action_on_neutral_signal(mock_create_signal, mock_portfolio)
     # Create test data
     timestamps = pd.DatetimeIndex(['2023-01-01'])
     tickers = ['AAPL']
-    index = pd.MultiIndex.from_product([timestamps, tickers], names=['Timestamp', 'Ticker'])
+    index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
     data = pd.DataFrame(
         index=index,
         data={'close': [150.0]}
@@ -489,7 +490,7 @@ def test_execute_updates_last_update_time(mock_create_signal, mock_portfolio):
     # Create test data
     timestamps = pd.DatetimeIndex(['2023-01-01'])
     tickers = ['AAPL']
-    index = pd.MultiIndex.from_product([timestamps, tickers], names=['Timestamp', 'Ticker'])
+    index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
     data = pd.DataFrame(
         index=index,
         data={'close': [150.0]}

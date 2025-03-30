@@ -1,0 +1,165 @@
+{
+    "simulation": {
+      "name": "Strategy Performance Analysis",
+      "description": "Testing multiple parameter combinations for trading strategies",
+      "version": "1.0",
+      "created_at": "2025-03-30T12:00:00Z",
+      "data_source": {
+        "db_name": "stock_data.db",
+        "alternative_sources": [
+          {"type": "csv", "path": "./data/alternate_prices.csv"}
+        ]
+      },
+      "runs": [
+        {
+          "id": "run_001",
+          "strategy": {
+            "name": "rsi_strategy",
+            "parameters": {
+              "rsi_period": 14,
+              "overbought_threshold": 70,
+              "oversold_threshold": 30,
+              "max_capital_per_position": 0.1
+            }
+          },
+          "portfolio": {
+            "initial_capital": 10000.0,
+            "commission": 0.001,
+            "slippage_model": {
+              "type": "percentage",
+              "value": 0.0005
+            },
+            "allow_short_selling": false,
+            "allow_margin_trading": false,
+            "max_positions": 10,
+            "max_allocation_per_position": 0.2,
+            "rebalancing": {
+              "enabled": false,
+              "frequency": "monthly",
+              "target_weights": {}
+            }
+          },
+          "timeframe": {
+            "start_date": "2024-01-01T00:00:00Z",
+            "end_date": "2024-03-30T00:00:00Z",
+            "data_buffer_months": 2,
+            "market_regimes": [
+              {"name": "full_period", "start_date": "2024-01-01T00:00:00Z", "end_date": "2024-03-30T00:00:00Z"},
+              {"name": "bull_market", "start_date": "2024-01-15T00:00:00Z", "end_date": "2024-02-15T00:00:00Z"},
+              {"name": "bear_market", "start_date": "2024-02-16T00:00:00Z", "end_date": "2024-03-15T00:00:00Z"}
+            ]
+          },
+          "data_selection": {
+            "type": "specific",
+            "tickers": ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]
+          },
+          "benchmark": {
+            "ticker": "SPY",
+            "use_benchmark": true
+          },
+          "risk_analysis": {
+            "monte_carlo": {
+              "enabled": false,
+              "iterations": 1000,
+              "method": "bootstrap", 
+              "confidence_interval": 0.95
+            },
+            "stress_test": {
+              "enabled": false,
+              "scenarios": [
+                {"name": "market_crash", "price_adjustment": -0.20, "duration_days": 5},
+                {"name": "liquidity_crisis", "slippage_multiplier": 5, "duration_days": 3}
+              ]
+            }
+          },
+          "output": {
+            "save_results": true,
+            "results_path": "./results/run_001/",
+            "plot_equity_curve": true,
+            "save_trades": true,
+            "calculate_metrics": ["sharpe_ratio", "sortino_ratio", "max_drawdown", "volatility", "calmar_ratio", "omega_ratio", "win_rate", "profit_factor"]
+          }
+        }
+      ],
+      "parameter_sweeps": [
+        {
+          "id": "rsi_period_sweep",
+          "base_run_id": "run_001",
+          "parameter_path": "strategy.parameters.rsi_period",
+          "values": [5, 7, 9, 14, 21],
+          "output_prefix": "rsi_period_"
+        },
+        {
+          "id": "threshold_sweep",
+          "base_run_id": "run_001",
+          "parameter_paths": [
+            {"path": "strategy.parameters.overbought_threshold", "values": [65, 70, 75, 80]},
+            {"path": "strategy.parameters.oversold_threshold", "values": [20, 25, 30, 35]}
+          ],
+          "output_prefix": "threshold_"
+        }
+      ],
+      "random_testing": [
+        {
+          "id": "random_ticker_test",
+          "base_run_id": "run_001",
+          "ticker_selection": {
+            "method": "random",
+            "count": 20,
+            "filter": {
+              "market_cap_min": 1000000000,
+              "sector": ["Technology", "Healthcare"],
+              "exclude_tickers": ["GME", "AMC"]
+            },
+            "iterations": 10,
+            "seeds": [42, 123, 456, 789, 101112]
+          },
+          "output_prefix": "random_tickers_"
+        }
+      ],
+      "walk_forward_testing": {
+        "enabled": true,
+        "training_period": "6m",
+        "testing_period": "1m",
+        "steps": 4,
+        "optimization_metric": "sharpe_ratio",
+        "optimize_parameters": ["strategy.parameters.rsi_period"]
+      },
+      "comparative_analysis": {
+        "enabled": true,
+        "metrics": ["total_return", "sharpe_ratio", "max_drawdown", "win_rate", "profit_factor"],
+        "group_by": ["strategy.name", "strategy.parameters.rsi_period"],
+        "output_path": "./results/comparative_analysis.json",
+        "visualizations": {
+          "heatmaps": true,
+          "scatter_plots": true,
+          "parameter_sensitivity": true
+        }
+      },
+      "multi_strategy_testing": [
+        {
+          "id": "strategy_comparison",
+          "strategies": [
+            {"name": "rsi_strategy", "parameters": {"rsi_period": 14, "overbought_threshold": 70, "oversold_threshold": 30}},
+            {"name": "macd_strategy", "parameters": {"fast_period": 12, "slow_period": 26, "signal_period": 9}},
+            {"name": "rsi_macd_strategy", "parameters": {"rsi_period": 14, "fast_period": 12, "slow_period": 26}}
+          ],
+          "common_settings": {
+            "data_selection": {
+              "type": "specific",
+              "tickers": ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]
+            },
+            "timeframe": {
+              "start_date": "2024-01-01T00:00:00Z",
+              "end_date": "2024-03-30T00:00:00Z"
+            },
+            "portfolio": {
+              "initial_capital": 10000.0,
+              "commission": 0.001
+            }
+          },
+          "output_prefix": "strategy_comparison_"
+        }
+      ]
+    }
+  }

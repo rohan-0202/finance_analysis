@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
-from backtesting.strategies.df_columns import TICKER, TIMESTAMP
+from common.df_columns import TICKER, TIMESTAMP
 from backtesting.strategy import Strategy
 from db_util import get_historical_data
 from backtesting.strategies.strategy_factory import StrategyFactory
@@ -141,9 +141,9 @@ class Backtest:
         # This ensures we definitely get the data up to 'end_date' using the existing
         # get_historical_data function's logic.
         today = datetime.now(timezone.utc)
-        days_to_fetch = (today - buffer_start_date).days + 1 # Add 1 for inclusivity
+        days_to_fetch = (today - buffer_start_date).days + 1  # Add 1 for inclusivity
         if days_to_fetch <= 0:
-             days_to_fetch = 1 # Fetch at least one day
+            days_to_fetch = 1  # Fetch at least one day
 
         all_data_raw = []
 
@@ -158,23 +158,25 @@ class Backtest:
                     # Don't warn here yet, filter first
                     continue
 
-                # --- Filter the fetched data to the *required* range --- 
+                # --- Filter the fetched data to the *required* range ---
                 # This is the core change: filter after fetching
                 ticker_data_filtered = ticker_data_raw[
-                    (ticker_data_raw.index >= buffer_start_date) &
-                    (ticker_data_raw.index <= end_date)
+                    (ticker_data_raw.index >= buffer_start_date)
+                    & (ticker_data_raw.index <= end_date)
                 ].copy()
                 # ----------------------------------------------------------
 
                 if ticker_data_filtered.empty:
-                    print(f"Warning: No data found for {ticker} in required range {buffer_start_date.date()} to {end_date.date()}. Skipping.")
+                    print(
+                        f"Warning: No data found for {ticker} in required range {buffer_start_date.date()} to {end_date.date()}. Skipping."
+                    )
                     continue
 
                 # Check if the filtered data actually starts after the buffer date
                 if ticker_data_filtered.index[0] > buffer_start_date:
-                     print(
-                         f"Warning: Data for {ticker} starts at {ticker_data_filtered.index[0].date()}, which is within the buffer period but after the intended buffer start {buffer_start_date.date()}."
-                     )
+                    print(
+                        f"Warning: Data for {ticker} starts at {ticker_data_filtered.index[0].date()}, which is within the buffer period but after the intended buffer start {buffer_start_date.date()}."
+                    )
 
                 # Add Ticker column
                 ticker_data_filtered[TICKER] = ticker
@@ -186,16 +188,20 @@ class Backtest:
                 all_data_raw.append(ticker_data_filtered)
 
             except ValueError as ve:
-                 # Handle cases where get_historical_data legitimately finds no data at all
-                 print(f"Warning: Could not fetch any data for {ticker} (up to {days_to_fetch} days back): {ve}. Skipping.")
-                 continue
+                # Handle cases where get_historical_data legitimately finds no data at all
+                print(
+                    f"Warning: Could not fetch any data for {ticker} (up to {days_to_fetch} days back): {ve}. Skipping."
+                )
+                continue
             except Exception as e:
                 print(f"Error processing data for {ticker}: {e}")
                 continue
 
         if not all_data_raw:
             # Raise error only if NO data was found for ANY ticker in the required range
-            raise ValueError("No valid data found for any ticker in the specified date range.")
+            raise ValueError(
+                "No valid data found for any ticker in the specified date range."
+            )
 
         # Combine all *filtered* data into one DataFrame
         combined_data = pd.concat(all_data_raw, ignore_index=True)
@@ -203,12 +209,18 @@ class Backtest:
         # Ensure 'timestamp' is tz-aware (UTC)
         # The get_historical_data function should already return UTC timestamps
         # but we double-check and ensure consistency here.
-        combined_data[TIMESTAMP] = pd.to_datetime(combined_data[TIMESTAMP], errors='coerce', utc=True)
-        combined_data.dropna(subset=[TIMESTAMP], inplace=True) # Drop rows where conversion failed
+        combined_data[TIMESTAMP] = pd.to_datetime(
+            combined_data[TIMESTAMP], errors="coerce", utc=True
+        )
+        combined_data.dropna(
+            subset=[TIMESTAMP], inplace=True
+        )  # Drop rows where conversion failed
 
         if combined_data.empty:
             # If after concatenation and timestamp handling, it's still empty
-            raise ValueError("Data became empty after processing timestamps. Check data quality.")
+            raise ValueError(
+                "Data became empty after processing timestamps. Check data quality."
+            )
 
         # Create MultiIndex
         combined_data = combined_data.set_index([TIMESTAMP, TICKER])
@@ -597,21 +609,27 @@ if __name__ == "__main__":
                 "nyse_tickers.txt",
                 os.path.join("src", "nyse_tickers.txt"),
                 os.path.join(os.getcwd(), "nyse_tickers.txt"),
-                os.path.join(os.getcwd(), "src", "nyse_tickers.txt")
+                os.path.join(os.getcwd(), "src", "nyse_tickers.txt"),
             ]
-            
+
             # Try to find and read the file
             for path in possible_paths:
                 if os.path.exists(path):
-                    with open(path, 'r') as f:
-                        tickers = [line.strip() for line in f if line.strip() and not line.startswith('^')]
+                    with open(path, "r") as f:
+                        tickers = [
+                            line.strip()
+                            for line in f
+                            if line.strip() and not line.startswith("^")
+                        ]
                     print(f"Loaded {len(tickers)} default tickers from {path}")
                     return tickers
-                    
+
             # If file not found, return a small default list
-            print("Warning: nyse_tickers.txt not found. Using minimal default ticker list.")
+            print(
+                "Warning: nyse_tickers.txt not found. Using minimal default ticker list."
+            )
             return ["SPY", "AAPL", "MSFT", "GOOGL", "AMZN"]
-            
+
         except Exception as e:
             print(f"Error loading default tickers: {e}")
             return ["SPY"]  # Fallback to SPY if there's an error
@@ -639,9 +657,9 @@ if __name__ == "__main__":
         help="Strategy to use (e.g., 'rsi_strategy')",
     )
     @click.option(
-        "--ticker", 
+        "--ticker",
         help="Comma-separated list of ticker symbols to backtest (e.g., 'AAPL,MSFT,GOOGL'). "
-             "If not specified, uses all tickers from nyse_tickers.txt"
+        "If not specified, uses all tickers from nyse_tickers.txt",
     )
     @click.option(
         "--db-name", default="stock_data.db", help="Database name for historical data"
@@ -661,8 +679,7 @@ if __name__ == "__main__":
     )
     @click.option("--plot", is_flag=True, help="Plot the backtest results")
     @click.option(
-        "--benchmark",
-        help="Ticker to use as benchmark (defaults to first ticker)"
+        "--benchmark", help="Ticker to use as benchmark (defaults to first ticker)"
     )
     def run(strategy, ticker, db_name, months, start_cash, commission, plot, benchmark):
         """Run a strategy backtest with specified parameters."""
@@ -682,17 +699,17 @@ if __name__ == "__main__":
         # Parse ticker option: either comma-separated list or defaults from file
         if ticker:
             # Split comma-separated tickers and strip whitespace
-            ticker_list = [t.strip() for t in ticker.split(',') if t.strip()]
+            ticker_list = [t.strip() for t in ticker.split(",") if t.strip()]
         else:
             ticker_list = get_default_tickers()
-        
+
         if not ticker_list:
             print("Error: No tickers specified and no default tickers found")
             return
-            
+
         # Set benchmark ticker to first ticker if not specified
         benchmark_ticker = benchmark if benchmark else ticker_list[0]
-            
+
         print(
             f"Running {strategy_class.__name__} for {len(ticker_list)} tickers from {start_date.date()} to {end_date.date()}"
         )
@@ -700,8 +717,10 @@ if __name__ == "__main__":
         if len(ticker_list) <= 5:
             print(f"Tickers: {', '.join(ticker_list)}")
         else:
-            print(f"Tickers: {', '.join(ticker_list[:5])}... and {len(ticker_list) - 5} more")
-            
+            print(
+                f"Tickers: {', '.join(ticker_list[:5])}... and {len(ticker_list) - 5} more"
+            )
+
         print(f"Using {benchmark_ticker} as benchmark for performance comparison")
 
         # Get default parameters for the strategy

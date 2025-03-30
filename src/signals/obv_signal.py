@@ -4,6 +4,8 @@ from typing import List, Optional, Tuple, cast
 import pandas as pd
 import ta  # Add the ta library import
 
+# --- Add import for df_columns ---
+from common import df_columns
 from db_util import get_historical_data
 from signals.base_signal import BaseSignal, SignalData
 
@@ -58,10 +60,12 @@ class OBVSignal(BaseSignal):
             price_data = price_data[pd.notna(price_data.index)]
 
             # Ensure required columns exist and remove rows with NaNs in critical columns
-            required_cols = ["close", "volume"]
+            # --- Use df_columns.CLOSE and df_columns.VOLUME ---
+            required_cols = [df_columns.CLOSE, df_columns.VOLUME]
             if not all(col in price_data.columns for col in required_cols):
+                # --- Use constants in message ---
                 print(
-                    f"Missing required columns ('close', 'volume') for {ticker_symbol}"
+                    f"Missing required columns ('{df_columns.CLOSE}', '{df_columns.VOLUME}') for {ticker_symbol}"
                 )
                 return None, None
             price_data = price_data.dropna(subset=required_cols)
@@ -74,7 +78,9 @@ class OBVSignal(BaseSignal):
             # Calculate OBV
             # Use the ta library to calculate OBV
             obv_indicator = ta.volume.OnBalanceVolumeIndicator(
-                close=price_data["close"], volume=price_data["volume"]
+                # --- Use df_columns constants ---
+                close=price_data[df_columns.CLOSE],
+                volume=price_data[df_columns.VOLUME],
             )
             obv_data = obv_indicator.on_balance_volume()
             obv_data = obv_data.dropna()  # Drop any initial NaNs if generated
@@ -111,7 +117,9 @@ class OBVSignal(BaseSignal):
             return []
 
         # Create a DataFrame for easier processing
-        data = pd.DataFrame({"obv": obv_data, "close": price_data["close"]})
+        # --- Use df_columns.CLOSE ---
+        # Note: 'obv' is the name of the series passed in, 'close' comes from price_data
+        data = pd.DataFrame({"obv": obv_data, "close": price_data[df_columns.CLOSE]})
 
         # Check if enough data points exist for rolling window calculations
         if len(data) < self.window * 2:  # Need enough data for rolling and pct_change
@@ -163,6 +171,7 @@ class OBVSignal(BaseSignal):
                             "date": date.to_pydatetime(),  # Convert to standard datetime
                             "type": "buy",
                             "obv": data.loc[date, "obv"],
+                            # --- Use 'close' key as it's part of the local `data` DataFrame ---
                             "price": data.loc[date, "close"],
                         },
                     )
@@ -185,6 +194,7 @@ class OBVSignal(BaseSignal):
                             "date": date.to_pydatetime(),  # Convert to standard datetime
                             "type": "sell",
                             "obv": data.loc[date, "obv"],
+                            # --- Use 'close' key as it's part of the local `data` DataFrame ---
                             "price": data.loc[date, "close"],
                         },
                     )
@@ -234,16 +244,21 @@ class OBVSignal(BaseSignal):
         # Get recent values
         current_obv = obv_data.iloc[-1]
         prev_obv = obv_data.iloc[-2]
-        current_close = price_data["close"].iloc[-1]
-        prev_close = price_data["close"].iloc[-2]
+        # --- Use df_columns.CLOSE ---
+        current_close = price_data[df_columns.CLOSE].iloc[-1]
+        prev_close = price_data[df_columns.CLOSE].iloc[-2]
 
         # Calculate short-term trends (5-day)
         obv_5d_change = (
             (obv_data.iloc[-1] - obv_data.iloc[-5]) / abs(obv_data.iloc[-5]) * 100
         )
+        # --- Use df_columns.CLOSE ---
         price_5d_change = (
-            (price_data["close"].iloc[-1] - price_data["close"].iloc[-5])
-            / price_data["close"].iloc[-5]
+            (
+                price_data[df_columns.CLOSE].iloc[-1]
+                - price_data[df_columns.CLOSE].iloc[-5]
+            )
+            / price_data[df_columns.CLOSE].iloc[-5]
             * 100
         )
 

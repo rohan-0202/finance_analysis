@@ -3,7 +3,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
-from backtesting.strategies.df_columns import CLOSE, TICKER, TIMESTAMP
+from common.df_columns import CLOSE, TICKER, TIMESTAMP
 from backtesting.strategy import Strategy
 from signals.macd_signal import MACDSignal
 from signals.rsi_signal import RSISignal

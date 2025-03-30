@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple, cast
 import pandas as pd
 import ta  # Add the ta library import
 
+from common import df_columns
 from db_util import get_historical_data
 from signals.base_signal import BaseSignal, SignalData
 
@@ -100,9 +101,11 @@ class MACDSignal(BaseSignal):
             price_data = price_data[pd.notna(price_data.index)]
 
             # Ensure required columns exist and remove rows with NaNs in critical columns
-            required_cols = ["close"]  # Only 'close' is needed for basic MACD
+            required_cols = [df_columns.CLOSE]  # Only 'close' is needed for basic MACD
             if not all(col in price_data.columns for col in required_cols):
-                print(f"Missing required column ('close') for {ticker_symbol}")
+                print(
+                    f"Missing required column ('{df_columns.CLOSE}') for {ticker_symbol}"
+                )
                 return None, None
             price_data = price_data.dropna(subset=required_cols)
 
@@ -114,7 +117,7 @@ class MACDSignal(BaseSignal):
             # Calculate MACD
             # Use the ta library to calculate MACD
             macd_indicator = ta.trend.MACD(
-                close=price_data["close"],
+                close=price_data[df_columns.CLOSE],
                 window_fast=self.fast_period,
                 window_slow=self.slow_period,
                 window_sign=self.signal_period,
@@ -202,7 +205,7 @@ class MACDSignal(BaseSignal):
                             "type": "buy",
                             "macd": macd_data.loc[date, "macd"],
                             "signal": macd_data.loc[date, "signal"],
-                            "price": price_data.loc[date, "close"],
+                            "price": price_data.loc[date, df_columns.CLOSE],
                         },
                     )
                 )
@@ -219,7 +222,7 @@ class MACDSignal(BaseSignal):
                             "type": "sell",
                             "macd": macd_data.loc[date, "macd"],
                             "signal": macd_data.loc[date, "signal"],
-                            "price": price_data.loc[date, "close"],
+                            "price": price_data.loc[date, df_columns.CLOSE],
                         },
                     )
                 )

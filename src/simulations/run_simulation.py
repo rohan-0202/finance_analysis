@@ -1,15 +1,17 @@
-import click
-from loguru import logger
 from datetime import datetime, time
 
+import click
+from loguru import logger
+
+# --- Imports for Backtesting ---
+from backtesting.backtest_strategy import Backtest
+from backtesting.strategies.strategy_factory import StrategyFactory
 from simulations.backtest_instances import get_backtest_instances
 from simulations.simulation_config import (
     SimulationConfig,
 )
 from simulations.ticker_handler import load_tickers_from_file
-# --- Imports for Backtesting ---
-from backtesting.backtest_strategy import Backtest
-from backtesting.strategies.strategy_factory import StrategyFactory
+
 # -----------------------------
 
 
@@ -107,6 +109,7 @@ def run_simulation(config, tickers_file):
                 benchmark_ticker=instance.benchmark_ticker,
                 # Note: data_buffer_months is handled within _prepare_data using the start_date
             )
+            logger.info(f"Results: {results}")
 
             # 5. Process results (e.g., save to instance.output_path, print summary)
             logger.success(f"Backtest {instance.run_id} completed successfully.")
@@ -115,10 +118,14 @@ def run_simulation(config, tickers_file):
             # TODO: Save results dictionary `results` to a file in instance.output_path
             # TODO: Optionally save plots using backtester.plot_results()
 
-        except ValueError as ve: # Catch strategy not found errors specifically
-             logger.error(f"Configuration error for backtest instance {instance.run_id}: {ve}")
+        except ValueError as ve:  # Catch strategy not found errors specifically
+            logger.error(
+                f"Configuration error for backtest instance {instance.run_id}: {ve}"
+            )
         except Exception as e:
-            logger.error(f"Error running backtest instance {instance.run_id}: {e}", exc_info=True) # Log traceback
+            logger.error(
+                f"Error running backtest instance {instance.run_id}: {e}", exc_info=True
+            )  # Log traceback
 
     logger.info("Simulation run finished.")
 

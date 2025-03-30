@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import ta  # Add the ta library import
 
+# --- Add import for df_columns ---
+from common import df_columns
 from db_util import get_historical_data
 from signals.base_signal import BaseSignal, SignalData
 
@@ -102,7 +104,7 @@ class RSISignal(BaseSignal):
             # Calculate RSI
             # Use the ta library to calculate RSI
             rsi_indicator = ta.momentum.RSIIndicator(
-                close=price_data["close"], window=self.window
+                close=price_data[df_columns.CLOSE], window=self.window
             )
             rsi_data = rsi_indicator.rsi()
 
@@ -143,7 +145,7 @@ class RSISignal(BaseSignal):
             return []
 
         # Create a DataFrame for easier processing
-        data = pd.DataFrame({"rsi": rsi_data, "close": price_data["close"]})
+        data = pd.DataFrame({"rsi": rsi_data, "close": price_data[df_columns.CLOSE]})
 
         # Identify buy signals (crossing up through oversold level)
         buy_signals = (data["rsi"] > self.oversold) & (

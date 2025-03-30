@@ -112,6 +112,7 @@ class StrategyFactory:
                     inspect.isclass(obj)
                     and issubclass(obj, Strategy)
                     and obj != Strategy
+                    and obj.__module__ == module.__name__
                 ):
                     strategy_class = obj
                     break

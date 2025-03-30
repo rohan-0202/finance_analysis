@@ -1,6 +1,6 @@
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import click
 import yfinance as yf
@@ -32,6 +32,44 @@ def parse_db_datetime(date_str):
             except ValueError:
                 # Try just the date
                 return datetime.strptime(date_str, "%Y-%m-%d")
+
+
+@retry_on_rate_limit()
+def get_earliest_data_date_from_history(ticker_symbol):
+    """
+    Attempts to find the earliest date with historical data for a ticker
+    by fetching the full history index using yfinance.history(period='max').
+    Returns a datetime.date object or None if unsuccessful.
+    """
+    print(
+        f"Attempting to find earliest data date for {ticker_symbol} via history lookup..."
+    )
+    try:
+        ticker_obj = yf.Ticker(ticker_symbol)
+        # Fetch max history, minimizing extra data/processing if possible
+        # We disable adjustments/actions as we only need the index.
+        history = ticker_obj.history(period="max", auto_adjust=False, actions=False)
+
+        if not history.empty:
+            # Get the first timestamp from the index
+            earliest_ts = history.index.min()
+            # Convert pandas Timestamp to a standard date object for comparison
+            earliest_date = earliest_ts.date()
+            print(
+                f"Found earliest date from history for {ticker_symbol}: {earliest_date}"
+            )
+            return earliest_date
+        else:
+            print(
+                f"Warning: yfinance returned no history for {ticker_symbol} when fetching period='max'. Cannot determine start date."
+            )
+            return None
+    except Exception as e:
+        # Catch potential errors during the yfinance call
+        print(
+            f"Error fetching history for {ticker_symbol} in get_earliest_data_date_from_history: {e}"
+        )
+        return None
 
 
 @retry_on_rate_limit()
@@ -87,60 +125,133 @@ def save_ticker_info(ticker_symbol, db_name="stock_data.db"):
 
 @retry_on_rate_limit()
 def save_historical_data(
-    ticker_symbol, period="2y", interval="1d", db_name="stock_data.db"
+    ticker_symbol, period="max", interval="1d", db_name="stock_data.db"
 ):
-    """Save historical price data to the database."""
+    """Save historical price data to the database, checking for gaps."""
     try:
         conn = sqlite3.connect(db_name)
         cursor = conn.cursor()
 
-        # Check for the latest date in the database for this ticker
+        # Check for the earliest and latest date in the database for this ticker
         cursor.execute(
-            "SELECT MAX(timestamp) FROM historical_prices WHERE ticker = ?",
+            "SELECT MIN(timestamp), MAX(timestamp) FROM historical_prices WHERE ticker = ?",
             (ticker_symbol,),
         )
-        latest_date_result = cursor.fetchone()[0]
+        min_date_result, max_date_result = cursor.fetchone()
 
-        # If we have data, get data only after that date
-        if latest_date_result:
-            latest_date = parse_db_datetime(latest_date_result)
-            if latest_date:
-                # Add one day to avoid duplicates
-                start_date = (latest_date + timedelta(days=1)).strftime("%Y-%m-%d")
-                print(
-                    f"Fetching {ticker_symbol} historical data from {start_date} onwards"
-                )
+        latest_date = parse_db_datetime(max_date_result) if max_date_result else None
+        earliest_date = parse_db_datetime(min_date_result) if min_date_result else None
 
-                # Use start parameter instead of period
-                ticker = yf.Ticker(ticker_symbol)
-                history = ticker.history(start=start_date, interval=interval)
+        # ticker object is created inside get_earliest_data_date_from_history
+        # and potentially again for fetching data later. Consider optimizing if needed.
+        history = None
+        fetch_max_period = False
+        actual_start_date = None  # Will store the determined start date (datetime.date)
 
-                if history.empty:
-                    print(
-                        f"No new historical data for {ticker_symbol} since {latest_date}"
-                    )
-                    conn.close()
-                    return
-            else:
-                # If parsing failed, fetch data for the specified period
-                print(
-                    f"Failed to parse latest date for {ticker_symbol}, fetching {period} of data"
-                )
-                ticker = yf.Ticker(ticker_symbol)
-                history = ticker.history(period=period, interval=interval)
+        # --- Determine Actual Start Date ---
+        # Directly use the history lookup method
+        print(f"Determining start date for {ticker_symbol} via history lookup.")
+        actual_start_date = get_earliest_data_date_from_history(ticker_symbol)
+
+        if not actual_start_date:
+            print(
+                f"Warning: Could not determine the actual start date for {ticker_symbol} via history lookup."
+            )
+        # --- End Determine Actual Start Date ---
+
+        # Determine fetch strategy
+        if not earliest_date or not latest_date:
+            # CASE 1: No data exists in the DB for this ticker yet.
+            print(
+                f"No existing data range found for {ticker_symbol}. Fetching max period."
+            )
+            fetch_max_period = True
+        # We need earliest_date to exist to compare it
+        elif (
+            actual_start_date
+            and earliest_date
+            and earliest_date.date() > actual_start_date
+        ):
+            # CASE 2: Data exists, we determined the actual start date, AND detected a gap at the beginning.
+            print(
+                f"Gap detected at the beginning for {ticker_symbol}. DB starts {earliest_date.date()}, actual start {actual_start_date}. Fetching max period."
+            )
+            fetch_max_period = True
         else:
-            # If no data exists, fetch data for the specified period
-            print(f"No existing data for {ticker_symbol}, fetching {period} of data")
+            # CASE 3: Data exists (`earliest_date` and `latest_date` are not None).
+            # Proceed with incremental fetching based on `latest_date`.
+            if actual_start_date:
+                print(
+                    f"Start date {actual_start_date} confirmed or acceptable for {ticker_symbol}. Proceeding incrementally."
+                )
+            else:
+                # This case now means get_earliest_data_date_from_history failed
+                print(
+                    f"Could not verify start date via history for {ticker_symbol}. Proceeding incrementally based on existing data."
+                )
+
+        # Fetch data based on strategy
+        if fetch_max_period:
+            print(
+                f"Fetching {ticker_symbol} historical data for period='{period}' (full fetch)"
+            )
+            # Need ticker object here if not already created
             ticker = yf.Ticker(ticker_symbol)
             history = ticker.history(period=period, interval=interval)
+        elif latest_date:  # This covers CASE 3
+            # Fetch data only after the latest date we have
+            start_date_dt = latest_date + timedelta(days=1)
+            if start_date_dt.date() <= datetime.now().date():
+                start_date_str = start_date_dt.strftime("%Y-%m-%d")
+                print(
+                    f"Fetching {ticker_symbol} historical data incrementally from {start_date_str} onwards"
+                )
+                # Need ticker object here if not already created
+                ticker = yf.Ticker(ticker_symbol)
+                history = ticker.history(start=start_date_str, interval=interval)
+            else:
+                print(
+                    f"Latest data for {ticker_symbol} ({latest_date.date()}) is up-to-date. No fetch needed."
+                )
+                import pandas as pd
 
-        # Prepare data for insertion
+                history = pd.DataFrame()
+        else:
+            print(
+                f"Error: Unexpected state for {ticker_symbol}. No fetch strategy determined. Check logic."
+            )
+            conn.close()
+            return
+
+        if history is None or history.empty:
+            if not fetch_max_period and latest_date:
+                # This case is handled above by checking start_date_dt vs today
+                # But we keep a log message here in case logic changes
+                pass  # Already printed message if up-to-date
+            elif fetch_max_period:
+                print(
+                    f"No historical data returned by yfinance for {ticker_symbol} with period='{period}'."
+                )
+            else:
+                print(f"No new historical data found for {ticker_symbol}.")
+
+            conn.close()
+            return
+
+        # Prepare data for insertion (ensure timezone-naive datetimes if DB requires)
         data_to_insert = []
         for date_idx, row in history.iterrows():
+            # Convert pandas Timestamp to python datetime.
+            # If Timestamp is timezone-aware, convert to naive UTC representation
+            # Adjust this based on how you want to store datetimes in SQLite (naive UTC is common)
+            ts = date_idx.to_pydatetime()
+            if ts.tzinfo is not None:
+                ts = ts.astimezone(timezone.utc).replace(tzinfo=None)
+
             data_to_insert.append(
                 (
                     ticker_symbol,
-                    date_idx.to_pydatetime(),  # Convert Timestamp to datetime
+                    ts,  # Use the processed timestamp
                     row.get("Open", None),
                     row.get("High", None),
                     row.get("Low", None),
@@ -154,7 +265,7 @@ def save_historical_data(
         if data_to_insert:
             cursor.executemany(
                 """
-            INSERT OR REPLACE INTO historical_prices 
+            INSERT OR REPLACE INTO historical_prices
             (ticker, timestamp, open, high, low, close, volume, dividends)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -163,14 +274,21 @@ def save_historical_data(
 
             conn.commit()
             print(
-                f"{len(data_to_insert)} new records of historical data for {ticker_symbol} saved to database."
+                f"{len(data_to_insert)} records of historical data for {ticker_symbol} saved/updated in database."
             )
-        else:
-            print(f"No new historical data to insert for {ticker_symbol}")
+        # Removed the 'else' part here, as an empty history is handled earlier
 
         conn.close()
     except Exception as e:
         print(f"Error saving historical data for {ticker_symbol}: {e}")
+        # Potentially close connection if open
+        if "conn" in locals() and conn:
+            try:
+                conn.close()
+            except Exception as close_e:
+                print(
+                    f"Error closing connection for {ticker_symbol} after error: {close_e}"
+                )
         raise
 
 
@@ -608,7 +726,7 @@ def save_all_data_for_ticker(ticker_symbol, db_name="stock_data.db"):
     print(f"Saving essential trading data for {ticker_symbol}...")
     try:
         save_ticker_info(ticker_symbol, db_name)
-        save_historical_data(ticker_symbol, period="2y", db_name=db_name)
+        save_historical_data(ticker_symbol, period="max", db_name=db_name)
         save_financial_metrics(ticker_symbol, db_name)
         save_options_data(ticker_symbol, db_name)
         save_recent_news(ticker_symbol, db_name)

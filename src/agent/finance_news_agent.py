@@ -15,10 +15,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
-from agent.finhub_util import fetch_news_finnhub
 from tqdm import tqdm
 
-
+from agent.finhub_util import fetch_news_finnhub
 
 # Configure logging
 logging.basicConfig(
@@ -744,10 +743,10 @@ CONFIDENCE: (high/medium/low)"""
             last_processed = self._get_last_processed_time(ticker)
             if (
                 last_processed
-                and (datetime.now() - last_processed).total_seconds() < 86400
+                and (datetime.now() - last_processed).total_seconds() < 86400 / 2
             ):  # 86400 seconds in 24 hours
                 logger.info(
-                    f"Skipping {ticker} as it was processed in the last 24 hours."
+                    f"Skipping {ticker} as it was processed in the last 12 hours."
                 )
                 continue
             time.sleep(3)  # Add a delay of 3 seconds before processing each ticker

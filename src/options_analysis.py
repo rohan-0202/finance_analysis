@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, TypedDict, Union
 import click
 import pandas as pd
 
-from db_util import get_historical_data, get_options_data
+from db_util import get_options_data
 from options.implied_volatility import analyze_implied_volatility
 from options.open_interest import analyze_open_interest_changes
 from options.put_call import calculate_put_call_ratio
@@ -449,7 +449,7 @@ def generate_trading_signal(
     factors = {}
     explanation = []
 
-    vix_data = get_historical_data("^VIX")
+    # vix_data = get_historical_data("^VIX")
     # print(vix_data)
 
     # 1. Analyze unusual activity

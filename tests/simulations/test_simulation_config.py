@@ -83,41 +83,14 @@
 #     - Potentially generate runs from sweeps/tests defined in the example config and verify their structure.
 
 
-import json
-import os
 import unittest
-from datetime import datetime
+from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
 
 # Assuming the SimulationConfig class is in src.simulations.simulation_config
 from src.simulations.simulation_config import (
-    ComparativeAnalysis,
-    DataSelection,
-    DataSelectionType,
-    DataSource,
-    MonteCarloConfig,
-    MonteCarloMethod,
-    MultiStrategy,
-    OutputConfig,
-    ParameterSweep,
     PortfolioParameters,
-    RandomTest,
-    Rebalancing,
-    RebalancingFrequency,
-    RiskAnalysis,
-    ScenarioConfig,
     SimulationConfig,
-    SimulationRun,
-    SlippageModel,
-    SlippageModelType,
-    StrategyConfig,
-    StressTestConfig,
-    TickerFilter,
-    TickerSelection,
-    Timeframe,
-    Visualization,
-    WalkForwardTest,
 )
 
 # Define a path for temporary test files
@@ -138,8 +111,8 @@ class TestSimulationConfig(unittest.TestCase):
                         "id": "run_minimal",
                         "strategy": {"name": "dummy_strategy"},
                         "timeframe": {
-                            "start_date": "2024-01-01T00:00:00Z",
-                            "end_date": "2024-01-31T00:00:00Z",
+                            "start_date": "2024-01-01",
+                            "end_date": "2024-01-31",
                         },
                     }
                 ],
@@ -168,7 +141,7 @@ class TestSimulationConfig(unittest.TestCase):
         self.assertEqual(len(config.runs), 1)
         self.assertEqual(config.runs[0].id, "run_minimal")
         self.assertEqual(config.runs[0].strategy.name, "dummy_strategy")
-        self.assertIsInstance(config.runs[0].timeframe.start_date, datetime)
+        self.assertIsInstance(config.runs[0].timeframe.start_date, date)
         self.assertIsInstance(
             config.runs[0].portfolio, PortfolioParameters
         )  # Check defaults assigned

@@ -181,3 +181,4 @@ site/public
 .vscode/
 .pyrightconfig.json
 hf_token.txt
+src/graphs/

@@ -46,18 +46,36 @@ class TimeseriesSignal(BaseSignal):
             series: A pandas Series of historical prices, indexed by date.
 
         Returns:
-            A SignalData object if the average forecast price is above the current price,
-            otherwise None.
+            A SignalData object indicating BUY or HOLD based on forecast vs current price,
+            or None if calculation fails or input is invalid.
         """
         if torch is None:
             print("Torch not available, cannot calculate timeseries signal.")
             return None
 
-        if series.empty:
-            print("Input series is empty.")
+        if series is None or series.empty:
+            print("Input series is empty or None.")
             return None
 
+        # --- Start Data Cleaning ---
+        # Ensure index is datetime and remove NaT indices
+        try:
+            series.index = pd.to_datetime(series.index, errors="coerce")
+            series = series[pd.notna(series.index)]
+        except Exception as e:
+            print(f"Error converting index to datetime or filtering NaT: {e}")
+            return None
+
+        # Remove rows with NaN values in the price series itself
+        series = series.dropna()
+
+        if series.empty:
+            print("Input series is empty after cleaning NaT/NaN.")
+            return None
+        # --- End Data Cleaning ---
+
         current_price = series.iloc[-1]
+        # Convert cleaned series values to tensor
         context = torch.tensor(series.values, dtype=torch.bfloat16)
 
         # Ensure context has at least 2 dimensions [batch, sequence_length]
@@ -77,6 +95,15 @@ class TimeseriesSignal(BaseSignal):
 
         # Calculate the median forecast across samples
         # Move forecast tensor *result* to CPU for numpy operations
+        # Ensure forecast_tensor is not empty and has the expected dimensions before processing
+        if (
+            forecast_tensor is None
+            or forecast_tensor.numel() == 0
+            or forecast_tensor.ndim < 3
+        ):
+            print("Forecast tensor is invalid or empty.")
+            return None
+
         median_forecast = np.quantile(forecast_tensor[0].cpu().numpy(), 0.5, axis=0)
 
         # Calculate the average of the median forecast values

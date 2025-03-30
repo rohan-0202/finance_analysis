@@ -17,7 +17,6 @@ dependencies = [
     "scipy>=1.15.2",
     "requests>=2.31.0",
     "python-dotenv>=1.0.0",
-    "pytest (>=8.3.5,<9.0.0)",
     "pydantic>=2.11.1",
 ]
 
@@ -29,6 +28,11 @@ notebook = [
 ]
 timeseries = [
     "chronos-forecasting @ git+https://github.com/amazon-science/chronos-forecasting.git",
+]
+dev = [
+  "pre-commit",
+  "pytest (>=8.3.5,<9.0.0)",
+  # ... other dev dependencies like pytest, ruff, mypy, etc.
 ]
 
 
@@ -92,6 +96,6 @@ docstring-code-format = false
 [tool.uv]
 dev-dependencies = [
     "isort>=6.0.1",
-    "ruff>=0.9.9",
+    "ruff>=0.4.4",
     "pytest>=8.0.0",
 ]

@@ -1,0 +1,31 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version. Update to a recent stable version (e.g., check latest releases)
+    # Let's use a much more recent version than v0.11.2
+    rev: v0.4.4 # Example: Update to a relevant recent version
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix] # Automatically fix fixable issues. Remove --fix to just report.
+        # Optional: You might need to specify types_or if you have notebooks etc.
+        # types_or: [python, pyi, jupyter]
+        files: "^(src|tests)/"
+      # Run the formatter.
+      - id: ruff-format
+        # Optional: You might need to specify types_or if you have notebooks etc.
+        # types_or: [python, pyi, jupyter]
+        files: "^(src|tests)/"
+  # The pytest hook seems fine, but ensure your tests don't modify tracked files,
+  # otherwise pre-commit might get confused.
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        types: [python]
+        pass_filenames: false # pytest discovers files on its own
+        # Optional: Add args if needed, e.g., specify test directory
+        args: ["-v"] # Add verbosity flag

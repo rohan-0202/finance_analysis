@@ -23,7 +23,9 @@ pipeline2 = ChronosPipeline.from_pretrained(
 # Fetch historical data for SPY
 try:
     # Fetching data for the last 5 years for better context
-    df = get_historical_data(ticker_symbol="NVDA", days=365 * 5)
+    df = get_historical_data(ticker_symbol="NVDA", days=365 * 2)
+    if df is None or df.empty:
+        raise ValueError("No data returned for NVDA")
 except ValueError as e:
     print(f"Error fetching data: {e}")
     exit()  # Exit if no data is found
@@ -31,9 +33,30 @@ except ValueError as e:
 # Ensure the DataFrame is sorted by timestamp if not already
 df = df.sort_index()
 
+# --- Start Data Cleaning ---
+# Ensure index is datetime and remove NaT indices
+try:
+    df.index = pd.to_datetime(df.index, errors="coerce")
+    df = df[pd.notna(df.index)]
+except Exception as e:
+    print(f"Error converting index to datetime or filtering NaT: {e}")
+    exit()
+
+# Ensure 'close' column exists and remove rows with NaN in 'close'
+if "close" not in df.columns:
+    print("Error: 'close' column not found in the data.")
+    exit()
+df = df.dropna(subset=["close"])
+
+if df.empty:
+    print("Data frame is empty after cleaning NaT/NaN.")
+    exit()
+# --- End Data Cleaning ---
+
+
 # context must be either a 1D tensor, a list of 1D tensors,
 # or a left-padded 2D tensor with batch as the first dimension
-# Use the 'close' price column
+# Use the 'close' price column from the cleaned DataFrame
 context_series = df["close"]
 context = torch.tensor(context_series.values)  # Use .values to get numpy array first
 prediction_length = 60  # Predict next 60 trading days (approx 3 months)
@@ -51,7 +74,7 @@ forecast2 = pipeline2.predict(
 )  # shape [num_series, num_samples, prediction_length]
 
 # visualize the forecasts
-# Create a future date range for the forecast
+# Create a future date range for the forecast using the last date from the *cleaned* DataFrame
 last_date = df.index[-1]
 # Generate future business days for the forecast index
 forecast_index = pd.bdate_range(

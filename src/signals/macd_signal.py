@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple, cast
 
 import pandas as pd
+import ta  # Add the ta library import
 
 from db_util import get_historical_data
 from signals.base_signal import BaseSignal, SignalData
@@ -111,7 +112,20 @@ class MACDSignal(BaseSignal):
             # --- End Data Cleaning ---
 
             # Calculate MACD
-            macd_data = self.calculate_macd(price_data["close"])
+            # Use the ta library to calculate MACD
+            macd_indicator = ta.trend.MACD(
+                close=price_data["close"],
+                window_fast=self.fast_period,
+                window_slow=self.slow_period,
+                window_sign=self.signal_period,
+            )
+            # Retrieve MACD line, signal line, and histogram
+            macd = macd_indicator.macd()
+            macd_signal = macd_indicator.macd_signal()
+            macd_hist = macd_indicator.macd_diff()  # Histogram
+            macd_data = pd.DataFrame(
+                {"macd": macd, "signal": macd_signal, "histogram": macd_hist}
+            )
 
             # Drop NaN values caused by MACD calculation
             macd_data = macd_data.dropna()

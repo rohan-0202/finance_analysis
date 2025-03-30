@@ -1,0 +1,162 @@
+{
+  "simulation": {
+    "name": "RSI+MACD Strategy Random Stock Testing",
+    "description": "Testing RSI+MACD strategy on 50 random sets of stocks over 2021-2025",
+    "version": "1.0",
+    "created_at": "2025-03-30",
+    "data_source": {
+      "db_name": "stock_data.db",
+      "alternative_sources": []
+    },
+    "runs": [
+      {
+        "id": "rsi_macd_base",
+        "strategy": {
+          "name": "rsi_macd_strategy",
+          "parameters": {
+            "rsi_period": 14,
+            "overbought_threshold": 60,
+            "oversold_threshold": 40,
+            "fast_period": 12,
+            "slow_period": 26,
+            "signal_period": 9,
+            "max_capital_per_position": 0.2
+          }
+        },
+        "portfolio": {
+          "initial_capital": 10000.0,
+          "commission": 0.001,
+          "slippage_model": {
+            "type": "none",
+            "value": 0.0
+          },
+          "allow_short_selling": false,
+          "allow_margin_trading": false,
+          "max_positions": null,
+          "max_allocation_per_position": null,
+          "rebalancing": {
+            "enabled": false,
+            "frequency": "monthly",
+            "target_weights": {}
+          }
+        },
+        "timeframe": {
+          "start_date": "2021-01-01",
+          "end_date": "2025-12-31",
+          "data_buffer_months": 2,
+          "market_regimes": []
+        },
+        "data_selection": {
+          "type": "random",
+          "tickers": [],
+          "ticker_selection": {
+            "method": "random",
+            "count": 20,
+            "filter": {
+              "market_cap_min": 1000000000.0,
+              "market_cap_max": null,
+              "sector": null,
+              "industry": null,
+              "exclude_tickers": [],
+              "min_price": null,
+              "max_price": null,
+              "min_volume": null,
+              "exchange": null
+            },
+            "iterations": 1,
+            "seeds": [
+              42
+            ]
+          }
+        },
+        "benchmark": {
+          "ticker": "SPY",
+          "use_benchmark": true
+        },
+        "risk_analysis": {
+          "monte_carlo": {
+            "enabled": false,
+            "iterations": 1000,
+            "method": "bootstrap",
+            "confidence_interval": 0.95
+          },
+          "stress_test": {
+            "enabled": false,
+            "scenarios": []
+          }
+        },
+        "output": {
+          "save_results": true,
+          "results_path": "./results/rsi_macd_random/",
+          "plot_equity_curve": true,
+          "save_trades": true,
+          "calculate_metrics": [
+            "sharpe_ratio",
+            "sortino_ratio",
+            "max_drawdown",
+            "volatility",
+            "calmar_ratio",
+            "win_rate",
+            "profit_factor",
+            "total_return"
+          ]
+        }
+      }
+    ],
+    "parameter_sweeps": [],
+    "random_testing": [
+      {
+        "id": "rsi_macd_random_test",
+        "base_run_id": "rsi_macd_base",
+        "ticker_selection": {
+          "method": "random",
+          "count": 20,
+          "filter": {
+            "market_cap_min": 1000000000.0,
+            "market_cap_max": null,
+            "sector": null,
+            "industry": null,
+            "exclude_tickers": [],
+            "min_price": null,
+            "max_price": null,
+            "min_volume": null,
+            "exchange": null
+          },
+          "iterations": 50,
+          "seeds": [
+            42,
+            101,
+            202,
+            303,
+            404,
+            505,
+            606,
+            707,
+            808,
+            909
+          ]
+        },
+        "output_prefix": "random_run_"
+      }
+    ],
+    "walk_forward_testing": null,
+    "comparative_analysis": {
+      "enabled": true,
+      "metrics": [
+        "total_return",
+        "sharpe_ratio",
+        "max_drawdown",
+        "win_rate",
+        "profit_factor"
+      ],
+      "group_by": [],
+      "output_path": "./results/rsi_macd_random/comparative_analysis.json",
+      "visualizations": {
+        "heatmaps": true,
+        "scatter_plots": true,
+        "parameter_sensitivity": false
+      }
+    },
+    "multi_strategy_testing": []
+  }
+}

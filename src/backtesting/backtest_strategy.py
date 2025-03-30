@@ -129,66 +129,88 @@ class Backtest:
         if isinstance(tickers, str):
             tickers = [tickers]
 
+        # Ensure start_date and end_date are UTC
+        start_date = ensure_utc_tz(start_date)
+        end_date = ensure_utc_tz(end_date)
+
         # Calculate fetch start date with buffer
         buffer_start_date = start_date - timedelta(days=data_buffer_months * 30)
-        # Ensure it's UTC
         buffer_start_date = ensure_utc_tz(buffer_start_date)
 
-        # Calculate days to fetch
-        days_to_fetch = (end_date - buffer_start_date).days
+        # Calculate days needed to fetch from buffer_start_date until *today*
+        # This ensures we definitely get the data up to 'end_date' using the existing
+        # get_historical_data function's logic.
+        today = datetime.now(timezone.utc)
+        days_to_fetch = (today - buffer_start_date).days + 1 # Add 1 for inclusivity
+        if days_to_fetch <= 0:
+             days_to_fetch = 1 # Fetch at least one day
 
-        all_data = []
+        all_data_raw = []
 
         for ticker in tickers:
             try:
-                # Fetch data for this ticker
-                ticker_data = get_historical_data(
+                # Fetch potentially *more* data than needed using the existing function
+                ticker_data_raw = get_historical_data(
                     ticker_symbol=ticker, db_name=db_name, days=days_to_fetch
                 )
 
-                if ticker_data.empty:
-                    print(f"Warning: No data found for {ticker}. Skipping.")
+                if ticker_data_raw.empty:
+                    # Don't warn here yet, filter first
                     continue
 
-                # Ensure we have enough history data
-                # Make sure buffer_start_date is timezone aware
-                buffer_start_date_utc = ensure_utc_tz(buffer_start_date)
+                # --- Filter the fetched data to the *required* range --- 
+                # This is the core change: filter after fetching
+                ticker_data_filtered = ticker_data_raw[
+                    (ticker_data_raw.index >= buffer_start_date) &
+                    (ticker_data_raw.index <= end_date)
+                ].copy()
+                # ----------------------------------------------------------
 
-                if ticker_data.index[0] > buffer_start_date_utc:
-                    print(
-                        f"Warning: Data for {ticker} only starts at {ticker_data.index[0].date()}, which is after the buffer start date {buffer_start_date.date()}."
-                    )
+                if ticker_data_filtered.empty:
+                    print(f"Warning: No data found for {ticker} in required range {buffer_start_date.date()} to {end_date.date()}. Skipping.")
+                    continue
+
+                # Check if the filtered data actually starts after the buffer date
+                if ticker_data_filtered.index[0] > buffer_start_date:
+                     print(
+                         f"Warning: Data for {ticker} starts at {ticker_data_filtered.index[0].date()}, which is within the buffer period but after the intended buffer start {buffer_start_date.date()}."
+                     )
 
                 # Add Ticker column
-                ticker_data[TICKER] = ticker
+                ticker_data_filtered[TICKER] = ticker
 
                 # Reset index to prepare for MultiIndex
-                ticker_data = ticker_data.reset_index()
+                ticker_data_filtered = ticker_data_filtered.reset_index()
 
-                # Append to our list
-                all_data.append(ticker_data)
+                # Append the *filtered* data to our list
+                all_data_raw.append(ticker_data_filtered)
 
+            except ValueError as ve:
+                 # Handle cases where get_historical_data legitimately finds no data at all
+                 print(f"Warning: Could not fetch any data for {ticker} (up to {days_to_fetch} days back): {ve}. Skipping.")
+                 continue
             except Exception as e:
-                print(f"Error fetching data for {ticker}: {e}")
+                print(f"Error processing data for {ticker}: {e}")
                 continue
 
-        if not all_data:
-            raise ValueError("No valid data found for any ticker.")
+        if not all_data_raw:
+            # Raise error only if NO data was found for ANY ticker in the required range
+            raise ValueError("No valid data found for any ticker in the specified date range.")
 
-        # Combine all data into one DataFrame
-        combined_data = pd.concat(all_data, ignore_index=True)
+        # Combine all *filtered* data into one DataFrame
+        combined_data = pd.concat(all_data_raw, ignore_index=True)
 
         # Ensure 'timestamp' is tz-aware (UTC)
-        combined_data[TIMESTAMP] = pd.to_datetime(combined_data[TIMESTAMP])
+        # The get_historical_data function should already return UTC timestamps
+        # but we double-check and ensure consistency here.
+        combined_data[TIMESTAMP] = pd.to_datetime(combined_data[TIMESTAMP], errors='coerce', utc=True)
+        combined_data.dropna(subset=[TIMESTAMP], inplace=True) # Drop rows where conversion failed
 
-        # Apply timezone info safely - handle both timezone-naive and aware datetimes
-        timestamps = []
-        for ts in combined_data[TIMESTAMP]:
-            timestamps.append(ensure_utc_tz(ts))
+        if combined_data.empty:
+            # If after concatenation and timestamp handling, it's still empty
+            raise ValueError("Data became empty after processing timestamps. Check data quality.")
 
-        combined_data[TIMESTAMP] = timestamps
-
-        # Create MultiIndex - rename to capital T Timestamp for compatibility with RSIStrategy
+        # Create MultiIndex
         combined_data = combined_data.set_index([TIMESTAMP, TICKER])
 
         # Sort by timestamp and ticker

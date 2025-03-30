@@ -1,14 +1,15 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
+import numpy as np
 import pandas as pd
+import pytest
 
 # Assuming Portfolio, RSISignal, SignalFactory are importable from these locations
 # Adjust paths if necessary based on your project structure
 from src.backtesting.portfolio import Portfolio
+from src.backtesting.strategies.df_columns import TICKER, TIMESTAMP
 from src.backtesting.strategies.rsi_strategy import RSIStrategy
 from src.signals.rsi_signal import RSISignal
-from src.backtesting.strategies.df_columns import TIMESTAMP, TICKER
 
 
 @pytest.fixture
@@ -195,55 +196,66 @@ def test_set_parameters_returns_self(mock_create_signal, mock_portfolio):
 
 # --- Tests for generate_signals ---
 
+
 @patch("backtesting.strategies.rsi_strategy.SignalFactory.create_signal")
 def test_generate_signals_buy_signal(mock_create_signal, mock_portfolio):
     """Test generate_signals produces buy signals when RSI is below oversold threshold."""
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
+    # Ensure the specific method being called exists on the mock
+    mock_rsi_signal_instance._calculate_rsi_from_series = MagicMock()
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     # Create a strategy with custom thresholds for testing
     strategy = RSIStrategy(portfolio=mock_portfolio)
     # Set a very short RSI period (2) to work with our limited test data
     strategy.set_parameters(rsi_period=2, oversold_threshold=30)
-    
+
     # Create test data with MultiIndex (Timestamp, Ticker)
-    timestamps = pd.DatetimeIndex(['2023-01-01', '2023-01-02', '2023-01-03'])
-    tickers = ['AAPL', 'MSFT']
+    timestamps = pd.DatetimeIndex(["2023-01-01", "2023-01-02", "2023-01-03"])
+    tickers = ["AAPL", "MSFT"]
     index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
-    
+
     # Create DataFrame with close prices
     data = pd.DataFrame(
-        index=index,
-        data={'close': [150.0, 250.0, 155.0, 255.0, 160.0, 260.0]}
+        index=index, data={"close": [150.0, 250.0, 155.0, 255.0, 160.0, 260.0]}
     )
-    
+
     # Create a simple mock RSI response that always returns a buy signal for AAPL
-    def mock_calculate_rsi(series):
-        print(f"Inside mock_calculate_rsi with series of length {len(series)}")
+    def mock_calculate_rsi_from_series(series):
+        print(
+            f"Inside mock_calculate_rsi_from_series with series of length {len(series)}"
+        )
         print(f"Series values: {series.values}")
-        
-        # No matter what, return a buy signal for AAPL and neutral for MSFT
+
+        # Determine ticker based on first value (adjust if needed for robustness)
+        # Get the timestamp index from the input series
+        series_timestamps = series.index
+
         if series.iloc[0] == 150.0:  # AAPL
             print("This is AAPL data - returning buy signal RSI (25)")
-            return pd.Series([float('nan'), 25.0, 25.0], index=timestamps)
+            # Ensure the returned series index matches the input series index
+            return pd.Series([float("nan"), 25.0, 25.0], index=series_timestamps)
         else:  # MSFT
             print("This is MSFT data - returning neutral signal RSI (40)")
-            return pd.Series([float('nan'), 40.0, 40.0], index=timestamps)
-    
-    # Directly patch the strategy's rsi_signal.calculate_rsi method
-    strategy.rsi_signal.calculate_rsi = mock_calculate_rsi
-    
+            # Ensure the returned series index matches the input series index
+            return pd.Series([float("nan"), 40.0, 40.0], index=series_timestamps)
+
+    # Directly patch the strategy's rsi_signal._calculate_rsi_from_series method
+    strategy.rsi_signal._calculate_rsi_from_series.side_effect = (
+        mock_calculate_rsi_from_series
+    )
+
     # Act
     signals = strategy.generate_signals(data)
-    
+
     print(f"Final signals: {signals}")
-    
+
     # Assert
-    assert 'AAPL' in signals
-    assert 'MSFT' in signals
-    assert signals['AAPL'] == 1.0  # Buy signal (RSI < oversold)
-    assert signals['MSFT'] == 0.0  # Neutral signal (RSI between thresholds)
+    assert "AAPL" in signals
+    assert "MSFT" in signals
+    assert signals["AAPL"] == 1.0  # Buy signal (RSI < oversold)
+    assert signals["MSFT"] == 0.0  # Neutral signal (RSI between thresholds)
 
 
 @patch("backtesting.strategies.rsi_strategy.SignalFactory.create_signal")
@@ -251,74 +263,98 @@ def test_generate_signals_sell_signal(mock_create_signal, mock_portfolio):
     """Test generate_signals produces sell signals when RSI is above overbought threshold."""
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
+    # Ensure the specific method being called exists on the mock
+    mock_rsi_signal_instance._calculate_rsi_from_series = MagicMock()
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     # Create a strategy with custom thresholds for testing
     strategy = RSIStrategy(portfolio=mock_portfolio)
     # Set a very short RSI period (2) to work with our limited test data
     strategy.set_parameters(rsi_period=2, overbought_threshold=70)
-    
+
     # Create test data with MultiIndex (Timestamp, Ticker)
-    timestamps = pd.DatetimeIndex(['2023-01-01', '2023-01-02', '2023-01-03'])
-    tickers = ['AAPL', 'MSFT']
+    timestamps = pd.DatetimeIndex(["2023-01-01", "2023-01-02", "2023-01-03"])
+    tickers = ["AAPL", "MSFT"]
     index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
-    
+
     # Create DataFrame with close prices
     data = pd.DataFrame(
-        index=index,
-        data={'close': [150.0, 250.0, 155.0, 255.0, 160.0, 260.0]}
+        index=index, data={"close": [150.0, 250.0, 155.0, 255.0, 160.0, 260.0]}
     )
-    
+
     # Mock the RSI calculation to return values above overbought threshold for AAPL
-    def mock_calculate_rsi(series):
+    def mock_calculate_rsi_from_series(series):
+        # Get the timestamp index from the input series
+        series_timestamps = series.index
         # Identify ticker by the first price value instead of length
         if series.iloc[0] == 150.0:  # AAPL data (first price is 150.0)
-            return pd.Series([float('nan'), 75.0, 75.0], index=timestamps)
+            # Ensure the returned series index matches the input series index
+            return pd.Series([float("nan"), 75.0, 75.0], index=series_timestamps)
         else:  # MSFT data (first price is 250.0)
-            return pd.Series([float('nan'), 65.0, 65.0], index=timestamps)
-    
+            # Ensure the returned series index matches the input series index
+            return pd.Series([float("nan"), 65.0, 65.0], index=series_timestamps)
+
     # Set up the mock RSI signal
-    strategy.rsi_signal.calculate_rsi = mock_calculate_rsi
-    
+    strategy.rsi_signal._calculate_rsi_from_series.side_effect = (
+        mock_calculate_rsi_from_series
+    )
+
     # Act
     signals = strategy.generate_signals(data)
-    
+
     # Assert
-    assert 'AAPL' in signals
-    assert 'MSFT' in signals
-    assert signals['AAPL'] == -1.0  # Sell signal (RSI > overbought)
-    assert signals['MSFT'] == 0.0   # Neutral signal (RSI between thresholds)
+    assert "AAPL" in signals
+    assert "MSFT" in signals
+    assert signals["AAPL"] == -1.0  # Sell signal (RSI > overbought)
+    assert signals["MSFT"] == 0.0  # Neutral signal (RSI between thresholds)
 
 
 @patch("backtesting.strategies.rsi_strategy.SignalFactory.create_signal")
 def test_generate_signals_insufficient_data(mock_create_signal, mock_portfolio):
     """Test generate_signals handles insufficient data gracefully."""
     # Arrange
+    # Mock the RSISignal instance that the factory would create
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
+    # IMPORTANT: Explicitly add the method we intend to mock if using spec=
+    # or ensure the spec includes it. Using autospec=True on the class might be better.
+    # Let's explicitly add the method to the mock's specification for clarity:
+    mock_rsi_signal_instance._calculate_rsi_from_series = MagicMock()
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     strategy = RSIStrategy(portfolio=mock_portfolio)
-    strategy.set_parameters(rsi_period=14)  # Need at least 15 data points
-    
-    # Create test data with only a few data points
-    timestamps = pd.DatetimeIndex(['2023-01-01', '2023-01-02'])  # Only 2 data points
-    tickers = ['AAPL']
+    rsi_period = 14
+    strategy.set_parameters(rsi_period=rsi_period)  # Need at least 15 data points
+
+    # Create test data with only a few data points (less than rsi_period + 1)
+    timestamps = pd.to_datetime(
+        ["2023-01-01", "2023-01-02", "2023-01-03"]
+    )  # Only 3 data points
+    tickers = ["AAPL"]
     index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
-    
-    data = pd.DataFrame(
-        index=index,
-        data={'close': [150.0, 155.0]}
+
+    data = pd.DataFrame(index=index, data={"close": [150.0, 155.0, 152.0]})
+
+    # Mock the RSI calculation helper - although it shouldn't be called
+    expected_return_series = pd.Series(
+        [np.nan] * len(timestamps), index=timestamps, dtype=float
     )
-    
-    # Mock the RSI calculation to return empty/NaN values due to insufficient data
-    mock_rsi_signal_instance.calculate_rsi.return_value = pd.Series([float('nan'), float('nan')], index=timestamps)
-    
+    mock_rsi_signal_instance._calculate_rsi_from_series.return_value = (
+        expected_return_series
+    )
+
     # Act
     signals = strategy.generate_signals(data)
-    
+
     # Assert
-    assert 'AAPL' in signals
-    assert signals['AAPL'] == 0.0  # Neutral signal when insufficient data
+    assert "AAPL" in signals
+    # Expect Neutral signal because there's not enough data
+    assert signals["AAPL"] == 0.0
+    # Verify the mocked method was NOT called due to the length check
+    mock_rsi_signal_instance._calculate_rsi_from_series.assert_not_called()
+    # # Check the argument passed was the 'close' series for AAPL - This check is removed as the method isn't called
+    # call_args, _ = mock_rsi_signal_instance._calculate_rsi_from_series.call_args
+    # expected_input_series = data.xs("AAPL", level=TICKER)[CLOSE]
+    # pd.testing.assert_series_equal(call_args[0], expected_input_series)
 
 
 @patch("backtesting.strategies.rsi_strategy.SignalFactory.create_signal")
@@ -327,15 +363,15 @@ def test_generate_signals_empty_data(mock_create_signal, mock_portfolio):
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     strategy = RSIStrategy(portfolio=mock_portfolio)
-    
+
     # Create empty DataFrame
     data = pd.DataFrame()
-    
+
     # Act
     signals = strategy.generate_signals(data)
-    
+
     # Assert
     assert isinstance(signals, dict)
     assert len(signals) == 0  # Empty signals dictionary
@@ -343,40 +379,38 @@ def test_generate_signals_empty_data(mock_create_signal, mock_portfolio):
 
 # --- Tests for execute ---
 
+
 @patch("backtesting.strategies.rsi_strategy.SignalFactory.create_signal")
 def test_execute_places_buy_orders(mock_create_signal, mock_portfolio):
     """Test execute places buy orders when a buy signal is generated."""
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     strategy = RSIStrategy(portfolio=mock_portfolio)
-    
+
     # Configure the portfolio mock
-    mock_portfolio.current_prices = {'AAPL': 150.0}
-    mock_portfolio.holdings = {'AAPL': 0}  # No current holdings
+    mock_portfolio.current_prices = {"AAPL": 150.0}
+    mock_portfolio.holdings = {"AAPL": 0}  # No current holdings
     mock_portfolio.get_value.return_value = 10000.0
-    
+
     # Create test data
-    timestamps = pd.DatetimeIndex(['2023-01-01'])
-    tickers = ['AAPL']
+    timestamps = pd.DatetimeIndex(["2023-01-01"])
+    tickers = ["AAPL"]
     index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
-    data = pd.DataFrame(
-        index=index,
-        data={'close': [150.0]}
-    )
-    
+    data = pd.DataFrame(index=index, data={"close": [150.0]})
+
     # Mock generate_signals to return a buy signal for AAPL
-    strategy.generate_signals = MagicMock(return_value={'AAPL': 1.0})  # Buy signal
-    
+    strategy.generate_signals = MagicMock(return_value={"AAPL": 1.0})  # Buy signal
+
     # Act
     strategy.execute(data)
-    
+
     # Assert
     # Check that place_order was called for AAPL with a positive quantity
     mock_portfolio.execute_trade.assert_called_once()
     call_args = mock_portfolio.execute_trade.call_args[0]
-    assert call_args[0] == 'AAPL'  # Ticker
+    assert call_args[0] == "AAPL"  # Ticker
     assert call_args[1] > 0  # Positive quantity for buy
     assert call_args[2] == 150.0  # Price
     assert call_args[3] == timestamps[0]  # Timestamp
@@ -388,35 +422,32 @@ def test_execute_places_sell_orders(mock_create_signal, mock_portfolio):
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     strategy = RSIStrategy(portfolio=mock_portfolio)
-    
+
     # Configure the portfolio mock
-    mock_portfolio.current_prices = {'AAPL': 150.0}
-    mock_portfolio.holdings = {'AAPL': 10}  # Existing holdings
+    mock_portfolio.current_prices = {"AAPL": 150.0}
+    mock_portfolio.holdings = {"AAPL": 10}  # Existing holdings
     mock_portfolio.get_value.return_value = 10000.0
     mock_portfolio.cansell.return_value = True
-    
+
     # Create test data
-    timestamps = pd.DatetimeIndex(['2023-01-01'])
-    tickers = ['AAPL']
+    timestamps = pd.DatetimeIndex(["2023-01-01"])
+    tickers = ["AAPL"]
     index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
-    data = pd.DataFrame(
-        index=index,
-        data={'close': [150.0]}
-    )
-    
+    data = pd.DataFrame(index=index, data={"close": [150.0]})
+
     # Mock generate_signals to return a sell signal for AAPL
-    strategy.generate_signals = MagicMock(return_value={'AAPL': -1.0})  # Sell signal
-    
+    strategy.generate_signals = MagicMock(return_value={"AAPL": -1.0})  # Sell signal
+
     # Act
     strategy.execute(data)
-    
+
     # Assert
     # Check that place_order was called for AAPL with a negative quantity
     mock_portfolio.execute_trade.assert_called_once()
     call_args = mock_portfolio.execute_trade.call_args[0]
-    assert call_args[0] == 'AAPL'  # Ticker
+    assert call_args[0] == "AAPL"  # Ticker
     assert call_args[1] < 0  # Negative quantity for sell
     assert call_args[2] == 150.0  # Price
     assert call_args[3] == timestamps[0]  # Timestamp
@@ -428,31 +459,28 @@ def test_execute_no_action_on_neutral_signal(mock_create_signal, mock_portfolio)
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     strategy = RSIStrategy(portfolio=mock_portfolio)
-    
+
     # Configure the portfolio mock
-    mock_portfolio.current_prices = {'AAPL': 150.0}
-    mock_portfolio.holdings = {'AAPL': 0}
-    
+    mock_portfolio.current_prices = {"AAPL": 150.0}
+    mock_portfolio.holdings = {"AAPL": 0}
+
     # Create test data
-    timestamps = pd.DatetimeIndex(['2023-01-01'])
-    tickers = ['AAPL']
+    timestamps = pd.DatetimeIndex(["2023-01-01"])
+    tickers = ["AAPL"]
     index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
-    data = pd.DataFrame(
-        index=index,
-        data={'close': [150.0]}
-    )
-    
+    data = pd.DataFrame(index=index, data={"close": [150.0]})
+
     # Mock generate_signals to return a neutral signal for AAPL
-    strategy.generate_signals = MagicMock(return_value={'AAPL': 0.0})  # Neutral signal
-    
+    strategy.generate_signals = MagicMock(return_value={"AAPL": 0.0})  # Neutral signal
+
     # Mock the calculate_position_size method to return 0
     strategy.calculate_position_size = MagicMock(return_value=0)
-    
+
     # Act
     strategy.execute(data)
-    
+
     # Assert
     # Check that place_order was not called
     mock_portfolio.execute_trade.assert_not_called()
@@ -464,15 +492,15 @@ def test_execute_empty_data(mock_create_signal, mock_portfolio):
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     strategy = RSIStrategy(portfolio=mock_portfolio)
-    
+
     # Create empty DataFrame
     data = pd.DataFrame()
-    
+
     # Act
     strategy.execute(data)
-    
+
     # Assert
     # Check that no signals were generated and no trades were executed
     mock_portfolio.execute_trade.assert_not_called()
@@ -484,24 +512,21 @@ def test_execute_updates_last_update_time(mock_create_signal, mock_portfolio):
     # Arrange
     mock_rsi_signal_instance = MagicMock(spec=RSISignal)
     mock_create_signal.return_value = mock_rsi_signal_instance
-    
+
     strategy = RSIStrategy(portfolio=mock_portfolio)
-    
+
     # Create test data
-    timestamps = pd.DatetimeIndex(['2023-01-01'])
-    tickers = ['AAPL']
+    timestamps = pd.DatetimeIndex(["2023-01-01"])
+    tickers = ["AAPL"]
     index = pd.MultiIndex.from_product([timestamps, tickers], names=[TIMESTAMP, TICKER])
-    data = pd.DataFrame(
-        index=index,
-        data={'close': [150.0]}
-    )
-    
+    data = pd.DataFrame(index=index, data={"close": [150.0]})
+
     # Mock generate_signals to return any signal
-    strategy.generate_signals = MagicMock(return_value={'AAPL': 0.0})
-    
+    strategy.generate_signals = MagicMock(return_value={"AAPL": 0.0})
+
     # Act
     strategy.execute(data)
-    
+
     # Assert
     # Check that last_update_time was updated
     assert strategy.last_update_time == timestamps[0]

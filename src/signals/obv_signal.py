@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional, Tuple, cast
 
 import pandas as pd
+import ta  # Add the ta library import
 
 from db_util import get_historical_data
 from signals.base_signal import BaseSignal, SignalData
@@ -21,38 +22,6 @@ class OBVSignal(BaseSignal):
 
     def __init__(self, window: int = 20):
         self.window = window
-
-    def calculate_obv(self, close: pd.Series, volume: pd.Series) -> pd.Series:
-        """
-        Calculate On-Balance Volume (OBV) for a price series.
-
-        Parameters:
-        -----------
-        close : pd.Series
-            Close price series
-        volume : pd.Series
-            Volume series
-
-        Returns:
-        --------
-        pd.Series: OBV values
-        """
-        obv = pd.Series(index=close.index, dtype=float)
-        obv.iloc[0] = volume.iloc[0]  # Initialize with first day's volume
-
-        # Calculate OBV based on price movement
-        for i in range(1, len(close)):
-            if close.iloc[i] > close.iloc[i - 1]:
-                # Price up, add volume
-                obv.iloc[i] = obv.iloc[i - 1] + volume.iloc[i]
-            elif close.iloc[i] < close.iloc[i - 1]:
-                # Price down, subtract volume
-                obv.iloc[i] = obv.iloc[i - 1] - volume.iloc[i]
-            else:
-                # Price unchanged, OBV unchanged
-                obv.iloc[i] = obv.iloc[i - 1]
-
-        return obv
 
     def calculate_indicator(
         self, ticker_symbol: str, db_name: str = "stock_data.db", days: int = 365
@@ -103,7 +72,12 @@ class OBVSignal(BaseSignal):
             # --- End Data Cleaning ---
 
             # Calculate OBV
-            obv_data = self.calculate_obv(price_data["close"], price_data["volume"])
+            # Use the ta library to calculate OBV
+            obv_indicator = ta.volume.OnBalanceVolumeIndicator(
+                close=price_data["close"], volume=price_data["volume"]
+            )
+            obv_data = obv_indicator.on_balance_volume()
+            obv_data = obv_data.dropna()  # Drop any initial NaNs if generated
 
             return price_data, obv_data
 

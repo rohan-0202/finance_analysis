@@ -120,7 +120,7 @@ def plot_indicators(
     sell_signals = [(s["date"], s["price"]) for s in rsi_signals if s["type"] == "sell"]
 
     # Get OBV signal
-    latest_obv_signal = obv_signal.get_latest_signal(ticker_symbol, db_name, days)
+    # latest_obv_signal = obv_signal.get_latest_signal(ticker_symbol, db_name, days)
 
     # ========== PRICE CHART (TOP PANEL) ==========
     ax1 = fig.add_subplot(gs[0])
@@ -510,12 +510,12 @@ def plot_indicators(
     )
 
     # Add OBV stats
-    current_obv = obv_data.iloc[-1] if not obv_data.empty else 0
-    obv_change = (
-        (current_obv - obv_data.iloc[-6]) / abs(obv_data.iloc[-6]) * 100
-        if len(obv_data) >= 6
-        else 0
-    )
+    # current_obv = obv_data.iloc[-1] if not obv_data.empty else 0
+    # obv_change = (
+    #     (current_obv - obv_data.iloc[-6]) / abs(obv_data.iloc[-6]) * 100
+    #     if len(obv_data) >= 6
+    #     else 0
+    # )
 
     obv_stats = obv_signal.get_status_text(price_data, obv_data)
 

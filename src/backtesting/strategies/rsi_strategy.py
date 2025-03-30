@@ -111,11 +111,15 @@ class RSIStrategy(Strategy):
                 signals[ticker] = 0.0  # Not enough data
                 continue
 
-            # Ensure the RSI calculation uses the current strategy parameter for the window
-            self.rsi_signal.window = self.parameters["rsi_period"]
-            rsi_series = self.rsi_signal.calculate_rsi(ticker_data)
+            # Use the new helper method from RSISignal
+            # Pass the 'close' price series for the specific ticker
+            rsi_series = self.rsi_signal._calculate_rsi_from_series(ticker_data)
 
-            if rsi_series.empty or pd.isna(rsi_series.iloc[-1]):
+            if (
+                rsi_series.empty
+                or rsi_series.isna().all()
+                or pd.isna(rsi_series.iloc[-1])
+            ):
                 signals[ticker] = 0.0  # RSI calculation failed or latest is NaN
                 continue
 
@@ -212,7 +216,7 @@ class RSIStrategy(Strategy):
     def get_default_parameters(cls) -> Dict:
         """
         Get default parameters for the RSI strategy.
-        
+
         Returns:
         --------
         Dict

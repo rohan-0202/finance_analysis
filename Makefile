@@ -49,6 +49,13 @@ uninstall_jupyter_kernel:
 jupyter_notebook:
 	uv run jupyter lab	
 
+run_simulation:
+	$(eval config=$(word 2,$(MAKECMDGOALS)))
+	uv run python src/simulations/run_simulation.py --config $(config) 
+
+test_strategy:
+	$(eval strategy=$(word 2,$(MAKECMDGOALS)))
+	uv run python src/backtesting/backtest_strategy.py run --strategy $(strategy) --months 24 --ticker 'SPY' --plot
 
 format:
 	uv run ruff format . 

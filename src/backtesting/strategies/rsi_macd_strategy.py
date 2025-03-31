@@ -3,11 +3,12 @@ from typing import Any, Dict
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
-from common.df_columns import CLOSE, TICKER, TIMESTAMP
+from backtesting.strategies.strategyutils.macd_util import (
+    generate_macd_signal_for_ticker,
+)
+from backtesting.strategies.strategyutils.rsi_util import generate_rsi_signal_for_ticker
 from backtesting.strategy import Strategy
-from signals.macd_signal import MACDSignal
-from signals.rsi_signal import RSISignal
-from signals.signal_factory import SignalFactory
+from common.df_columns import CLOSE, TICKER
 
 
 class RSIMACDStrategy(Strategy):
@@ -25,101 +26,21 @@ class RSIMACDStrategy(Strategy):
         # Combine default parameters from both strategies
         self.parameters = self.get_default_parameters()
 
-        # Create signal objects using factory and initial parameters
-        self.rsi_signal: RSISignal = SignalFactory.create_signal(
-            "rsi",
-            window=self.parameters["rsi_period"],
-            overbought=self.parameters["overbought_threshold"],
-            oversold=self.parameters["oversold_threshold"],
-        )
-        self.macd_signal: MACDSignal = SignalFactory.create_signal(
-            "macd",
-            fast_period=self.parameters["fast_period"],
-            slow_period=self.parameters["slow_period"],
-            signal_period=self.parameters["signal_period"],
-        )
-
     def set_parameters(self, **kwargs):
         """Set strategy parameters and update signal objects."""
         super().set_parameters(**kwargs)
         # Re-configure signal objects if relevant parameters changed
-        if "rsi_period" in kwargs:
-            self.rsi_signal.window = self.parameters["rsi_period"]
-        if "overbought_threshold" in kwargs:
-            self.rsi_signal.overbought = self.parameters["overbought_threshold"]
-        if "oversold_threshold" in kwargs:
-            self.rsi_signal.oversold = self.parameters["oversold_threshold"]
-        if "fast_period" in kwargs:
-            self.macd_signal.fast_period = self.parameters["fast_period"]
-        if "slow_period" in kwargs:
-            self.macd_signal.slow_period = self.parameters["slow_period"]
-        if "signal_period" in kwargs:
-            self.macd_signal.signal_period = self.parameters["signal_period"]
+        if "rsi_parameters" in kwargs:
+            self.parameters["rsi_parameters"] = kwargs["rsi_parameters"]
+        if "macd" in kwargs:
+            self.parameters["macd"] = kwargs["macd"]
+        if "max_capital_per_position" in kwargs:
+            self.parameters["max_capital_per_position"] = kwargs[
+                "max_capital_per_position"
+            ]
+        if "commission" in kwargs:
+            self.parameters["commission"] = kwargs["commission"]
         return self
-
-    def _generate_rsi_signal(self, ticker_data: pd.Series, ticker: str) -> float:
-        """Generates the RSI signal for a single ticker."""
-        min_required_data = self.parameters["rsi_period"] + 1
-        if len(ticker_data) < min_required_data:
-            return 0.0
-
-        # Ensure the RSI calculation uses the current strategy parameter for the window
-        self.rsi_signal.window = self.parameters["rsi_period"]
-        self.rsi_signal.overbought = self.parameters["overbought_threshold"]
-        self.rsi_signal.oversold = self.parameters["oversold_threshold"]
-
-        # Call the correct helper method to calculate RSI from the series
-        rsi_series = self.rsi_signal._calculate_rsi_from_series(ticker_data)
-
-        if rsi_series.empty or pd.isna(rsi_series.iloc[-1]):
-            return 0.0  # RSI calculation failed or latest is NaN
-
-        latest_rsi = rsi_series.iloc[-1]
-
-        if latest_rsi > self.parameters["overbought_threshold"]:
-            return -1.0  # Sell signal (Overbought)
-        elif latest_rsi < self.parameters["oversold_threshold"]:
-            return 1.0  # Buy signal (Oversold)
-        else:
-            return 0.0  # Neutral signal
-
-    def _generate_macd_signal(self, ticker_data: pd.Series, ticker: str) -> float:
-        """Generates the MACD signal for a single ticker."""
-        min_required_data = (
-            self.parameters["slow_period"] + self.parameters["signal_period"] + 1
-        )
-        if len(ticker_data) < min_required_data:
-            return 0.0
-
-        # Ensure MACD calculation uses current parameters
-        self.macd_signal.fast_period = self.parameters["fast_period"]
-        self.macd_signal.slow_period = self.parameters["slow_period"]
-        self.macd_signal.signal_period = self.parameters["signal_period"]
-
-        macd_df = self.macd_signal.calculate_macd(ticker_data)
-        macd_df = macd_df.dropna()
-
-        if (
-            macd_df.empty
-            or len(macd_df) < 2
-            or "macd" not in macd_df.columns
-            or "signal" not in macd_df.columns
-            or pd.isna(macd_df["macd"].iloc[-1])
-            or pd.isna(macd_df["signal"].iloc[-1])
-        ):
-            return 0.0
-
-        latest_macd = macd_df["macd"].iloc[-1]
-        latest_signal = macd_df["signal"].iloc[-1]
-        prev_macd = macd_df["macd"].iloc[-2]
-        prev_signal = macd_df["signal"].iloc[-2]
-
-        if latest_macd > latest_signal and prev_macd <= prev_signal:
-            return 1.0  # Buy signal (MACD crossed above Signal)
-        elif latest_macd < latest_signal and prev_macd >= prev_signal:
-            return -1.0  # Sell signal (MACD crossed below Signal)
-        else:
-            return 0.0  # Hold signal (No crossover)
 
     def generate_signals(self, data: pd.DataFrame) -> Dict[str, float]:
         """
@@ -154,8 +75,12 @@ class RSIMACDStrategy(Strategy):
                 continue  # Ticker not present
 
             # Generate individual signals
-            rsi_signal = self._generate_rsi_signal(ticker_data, ticker)
-            macd_signal = self._generate_macd_signal(ticker_data, ticker)
+            rsi_signal = generate_rsi_signal_for_ticker(
+                ticker_data, self.parameters["rsi_parameters"]
+            )
+            macd_signal = generate_macd_signal_for_ticker(
+                ticker_data, self.parameters["macd"]
+            )
 
             # Combine signals: Trade if either signals, unless they conflict
             signal = 0.0
@@ -185,13 +110,17 @@ class RSIMACDStrategy(Strategy):
         """
         return {
             # RSI defaults
-            "rsi_period": 14,
-            "overbought_threshold": 60,
-            "oversold_threshold": 40,
+            "rsi_parameters": {
+                "rsi_period": 14,
+                "overbought_threshold": 60,
+                "oversold_threshold": 40,
+            },
             # MACD defaults
-            "fast_period": 12,
-            "slow_period": 26,
-            "signal_period": 9,
+            "macd": {
+                "fast_period": 12,
+                "slow_period": 26,
+                "signal_period": 9,
+            },
             # Shared/Risk defaults (using RSI's as base, can be adjusted)
             "max_capital_per_position": 0.9,
             "commission": 0.001,

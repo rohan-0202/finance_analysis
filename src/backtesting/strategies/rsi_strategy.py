@@ -15,13 +15,9 @@ from typing import Dict
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
-from common.df_columns import CLOSE, TICKER, TIMESTAMP
+from backtesting.strategies.strategyutils.rsi_util import generate_rsi_signal_for_ticker
 from backtesting.strategy import Strategy
-from signals.rsi_signal import RSISignal
-from signals.signal_factory import SignalFactory
-
-# Assuming RSISignal class might be needed if Factory needs refinement or direct use
-# from signals.rsi_signal import RSISignal
+from common.df_columns import CLOSE, TICKER
 
 
 class RSIStrategy(Strategy):
@@ -31,27 +27,14 @@ class RSIStrategy(Strategy):
         super().__init__("RSI Strategy", portfolio)
         # Initialize parameters with defaults
         self.parameters = {
-            "rsi_period": 14,
-            "overbought_threshold": 70,
-            "oversold_threshold": 30,
+            "rsi_parameters": {
+                "rsi_period": 14,
+                "overbought_threshold": 70,
+                "oversold_threshold": 30,
+            },
             "max_capital_per_position": 0.1,
             "commission": 0.0,
         }
-        # Create and configure the RSI signal object using parameters
-        # Option 1: Assuming SignalFactory can take parameters
-        self.rsi_signal: RSISignal = SignalFactory.create_signal(
-            "rsi",
-            window=self.parameters["rsi_period"],
-            overbought=self.parameters["overbought_threshold"],
-            oversold=self.parameters["oversold_threshold"],
-        )
-        # Option 2: If SignalFactory cannot take params, instantiate directly
-        # from signals.rsi_signal import RSISignal # requires import
-        # self.rsi_signal = RSISignal(
-        #     window=self.parameters["rsi_period"],
-        #     overbought=self.parameters["overbought_threshold"],
-        #     oversold=self.parameters["oversold_threshold"],
-        # )
 
     def set_parameters(self, **kwargs):
         """Set strategy parameters and update signal object."""
@@ -59,11 +42,17 @@ class RSIStrategy(Strategy):
         # Re-configure the rsi_signal instance if relevant parameters changed
         # Assumes the rsi_signal object has mutable attributes like window, overbought, oversold
         if "rsi_period" in kwargs:
-            self.rsi_signal.window = self.parameters["rsi_period"]
+            self.parameters["rsi_parameters"]["rsi_period"] = self.parameters[
+                "rsi_period"
+            ]
         if "overbought_threshold" in kwargs:
-            self.rsi_signal.overbought = self.parameters["overbought_threshold"]
+            self.parameters["rsi_parameters"]["overbought_threshold"] = self.parameters[
+                "overbought_threshold"
+            ]
         if "oversold_threshold" in kwargs:
-            self.rsi_signal.oversold = self.parameters["oversold_threshold"]
+            self.parameters["rsi_parameters"]["oversold_threshold"] = self.parameters[
+                "oversold_threshold"
+            ]
         # Note: Commission is used directly from self.parameters in place_order
         return self
 
@@ -95,9 +84,6 @@ class RSIStrategy(Strategy):
             self.parameters["rsi_period"] + 1
         )  # Need diff, so period+1 points
 
-        overbought = self.parameters["overbought_threshold"]
-        oversold = self.parameters["oversold_threshold"]
-
         for ticker in tickers:
             # Use .loc for potentially non-unique Ticker index slices if needed
             # ticker_data = data.loc[(slice(None), ticker), 'close']
@@ -111,26 +97,10 @@ class RSIStrategy(Strategy):
                 signals[ticker] = 0.0  # Not enough data
                 continue
 
-            # Use the new helper method from RSISignal
-            # Pass the 'close' price series for the specific ticker
-            rsi_series = self.rsi_signal._calculate_rsi_from_series(ticker_data)
-
-            if (
-                rsi_series.empty
-                or rsi_series.isna().all()
-                or pd.isna(rsi_series.iloc[-1])
-            ):
-                signals[ticker] = 0.0  # RSI calculation failed or latest is NaN
-                continue
-
-            latest_rsi = rsi_series.iloc[-1]
-
-            if latest_rsi > overbought:
-                signals[ticker] = -1.0  # Sell signal (Overbought)
-            elif latest_rsi < oversold:
-                signals[ticker] = 1.0  # Buy signal (Oversold)
-            else:
-                signals[ticker] = 0.0  # Neutral signal
+            signals[ticker] = generate_rsi_signal_for_ticker(
+                ticker_data,
+                self.parameters["rsi_parameters"],
+            )
 
         return signals
 
@@ -145,9 +115,11 @@ class RSIStrategy(Strategy):
             Dictionary of default parameters
         """
         return {
-            "rsi_period": 14,
-            "overbought_threshold": 70,
-            "oversold_threshold": 30,
-            "max_capital_per_position": 0.9,
-            "commission": 0.001,
+            "rsi_parameters": {
+                "rsi_period": 14,
+                "overbought_threshold": 70,
+                "oversold_threshold": 30,
+            },
+            "max_capital_per_position": 0.1,
+            "commission": 0.0,
         }

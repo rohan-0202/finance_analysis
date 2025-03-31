@@ -1,6 +1,10 @@
 from typing import TypedDict
 
-from backtesting.strategies.strategyutils.volatililty_utils import VolatilityRegime
+import numpy as np
+import pandas as pd
+import ta
+
+from backtesting.strategies.strategyutils.volatililty_util import VolatilityRegime
 
 
 # Define the TypedDict for RSI parameters
@@ -11,7 +15,7 @@ class RsiParams(TypedDict):
     position_size_multiplier: float
 
 
-def get_rsi_parameters(regime: VolatilityRegime) -> RsiParams:
+def get_rsi_parameters_by_volatility(regime: VolatilityRegime) -> RsiParams:
     """
     Get RSI parameters appropriate for the current volatility regime.
 
@@ -88,3 +92,43 @@ def calculate_position_size(
 
     # Calculate and return the adjusted position size
     return base_position_size * multiplier
+
+
+def generate_rsi_signal_for_ticker(
+    ticker_data: pd.Series,
+    rsi_parameters: RsiParams,
+) -> float:
+    """
+    Generate an RSI signal for a ticker.
+
+    Args:
+        ticker_data (pd.Series): The ticker data.
+        rsi_parameters (RsiParams): The RSI parameters.
+
+    Returns:
+    """
+    if ticker_data.empty or len(ticker_data) < rsi_parameters["rsi_period"]:
+        # Return an empty series or series of NaNs matching the input index length
+        # Ensure index is preserved for alignment later
+        return pd.Series(
+            [np.nan] * len(ticker_data), index=ticker_data.index, dtype=float
+        )
+
+    # Use the ta library to calculate RSI
+    # fillna=False prevents filling initial NaNs required for window calculation
+    rsi_indicator = ta.momentum.RSIIndicator(
+        close=ticker_data, window=rsi_parameters["rsi_period"], fillna=False
+    )
+    rsi_series = rsi_indicator.rsi()
+
+    if rsi_series.empty or rsi_series.isna().all() or pd.isna(rsi_series.iloc[-1]):
+        return 0.0  # RSI calculation failed or latest is NaN
+
+    latest_rsi = rsi_series.iloc[-1]
+
+    if latest_rsi > rsi_parameters["overbought_threshold"]:
+        return -1.0  # Sell signal (Overbought)
+    elif latest_rsi < rsi_parameters["oversold_threshold"]:
+        return 1.0  # Buy signal (Oversold)
+    else:
+        return 0.0  # Neutral signal

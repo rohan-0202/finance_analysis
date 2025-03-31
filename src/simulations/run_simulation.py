@@ -1,10 +1,9 @@
-from datetime import datetime, time, date
+import os
+import pathlib  # Import pathlib
+from datetime import datetime, time
 
 import click
 from loguru import logger
-import os
-import json
-import pathlib # Import pathlib
 
 # --- Imports for Backtesting ---
 from backtesting.backtest_strategy import Backtest
@@ -37,7 +36,7 @@ def run_simulation(config, tickers_file):
     # --- Determine Base Output Directory from Config Path ---
     config_path = pathlib.Path(config)
     # Get filename without extension (e.g., "example_config")
-    config_name = config_path.stem 
+    config_name = config_path.stem
     # Create base results path (e.g., "./results/example_config")
     base_output_dir = os.path.join(".", "results", config_name)
     logger.info(f"Base output directory set to: {base_output_dir}")
@@ -115,7 +114,7 @@ def run_simulation(config, tickers_file):
 
             # 4. Run the backtest
             logger.info(f"Executing backtest for {instance.run_id}...")
-            results = backtester.run(
+            backtester.run(
                 tickers=instance.tickers,
                 start_date=start_dt,
                 end_date=end_dt,
@@ -125,24 +124,26 @@ def run_simulation(config, tickers_file):
             )
             # logger.info(f"Results: {results}") # Optional: remove if too verbose
 
-            # 5. Process results 
+            # 5. Process results
             logger.success(f"Backtest {instance.run_id} completed successfully.")
             # Optional: Print summary to console still?
-            # backtester.print_results() 
+            # backtester.print_results()
 
             # --- Get results as string and save to TXT file ---
             results_string = backtester.get_results_as_string()
             if results_string:
-                 # Sanitize run_id for use in filename if needed (replace slashes, etc.)
-                 safe_run_id = instance.run_id.replace(os.sep, '_').replace('/', '_') 
-                 results_filename = f"{safe_run_id}.txt"
-                 results_filepath = os.path.join(base_output_dir, results_filename)
-                 try:
-                     with open(results_filepath, 'w') as f:
-                         f.write(results_string)
-                     logger.info(f"Results saved to: {results_filepath}")
-                 except Exception as save_e:
-                     logger.error(f"Failed to save results for {instance.run_id} to {results_filepath}: {save_e}")
+                # Sanitize run_id for use in filename if needed (replace slashes, etc.)
+                safe_run_id = instance.run_id.replace(os.sep, "_").replace("/", "_")
+                results_filename = f"{safe_run_id}.txt"
+                results_filepath = os.path.join(base_output_dir, results_filename)
+                try:
+                    with open(results_filepath, "w") as f:
+                        f.write(results_string)
+                    logger.info(f"Results saved to: {results_filepath}")
+                except Exception as save_e:
+                    logger.error(
+                        f"Failed to save results for {instance.run_id} to {results_filepath}: {save_e}"
+                    )
             else:
                 logger.warning(f"Could not get results string for {instance.run_id}")
             # ---------------------------------------------------

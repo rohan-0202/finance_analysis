@@ -3,10 +3,10 @@ from loguru import logger
 
 from backtesting.portfolio import Portfolio
 from backtesting.strategies.rsi_macd_strategy import RSIMACDStrategy
-from backtesting.strategies.strategyutils.rsi_byvolatility import (
-    get_rsi_parameters,
+from backtesting.strategies.strategyutils.rsi_util import (
+    get_rsi_parameters_by_volatility,
 )
-from backtesting.strategies.strategyutils.volatililty_utils import (
+from backtesting.strategies.strategyutils.volatililty_util import (
     get_volatility_regime,
 )
 
@@ -34,7 +34,7 @@ class RSIMACDVolatilityStrategy(RSIMACDStrategy):
     def _generate_rsi_signal(self, ticker_data: pd.Series, ticker: str) -> float:
         """Generates the RSI signal for a single ticker."""
         volatility_regime = get_volatility_regime(ticker_data)
-        rsi_parameters = get_rsi_parameters(volatility_regime)
+        rsi_parameters = get_rsi_parameters_by_volatility(volatility_regime)
         # logger.info(f"RSI parameters: {rsi_parameters}")
         self.set_parameters(**rsi_parameters)
 

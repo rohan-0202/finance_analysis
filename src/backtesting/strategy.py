@@ -5,6 +5,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
+from common.df_columns import CLOSE, TICKER, TIMESTAMP
 
 
 class Strategy(ABC):
@@ -55,7 +56,6 @@ class Strategy(ABC):
         """
         pass
 
-    @abstractmethod
     def execute(self, data: pd.DataFrame) -> None:
         """
         Execute the strategy on the given data.
@@ -68,7 +68,71 @@ class Strategy(ABC):
         data : pd.DataFrame
             Market data for the current time period
         """
-        pass
+        if data.empty:
+            return
+
+        # Ensure data has the expected MultiIndex
+        if not isinstance(data.index, pd.MultiIndex) or list(data.index.names) != [
+            TIMESTAMP,
+            TICKER,
+        ]:
+            print(
+                f"Error: Dataframe passed to {self.name}.execute does not have ('timestamp', 'ticker') MultiIndex."
+            )
+            return
+
+        # Get the latest timestamp from the data provided
+        latest_timestamp = data.index.get_level_values(TIMESTAMP).max()
+        self.last_update_time = latest_timestamp  # Update strategy timestamp
+
+        # Update portfolio's current prices
+        self._update_current_prices(data, latest_timestamp)
+
+        # Generate signals based on the historical data provided
+        self.current_signals = self.generate_signals(data)
+
+        # Apply risk management
+        adjusted_signals = self.apply_risk_management(self.current_signals)
+
+        # Execute trades based on adjusted signals
+        for ticker, signal in adjusted_signals.items():
+            if (
+                ticker not in self.portfolio.current_prices
+                or self.portfolio.current_prices[ticker] <= 0
+            ):
+                continue  # Skip if price is missing or invalid
+
+            # Calculate desired position size based on signal
+            target_shares = self.calculate_position_size(ticker, signal)
+
+            # Get current position size
+            current_shares = self.portfolio.holdings.get(ticker, 0)
+
+            # Calculate shares to trade to reach the target position
+            trade_shares = target_shares - current_shares
+
+            if trade_shares != 0:
+                # Place the order using the base class method
+                self.place_order(ticker, trade_shares, latest_timestamp)
+
+    def _update_current_prices(self, data: pd.DataFrame, timestamp) -> None:
+        """
+        Update the portfolio's current prices from the data at the given timestamp.
+        
+        Parameters:
+        -----------
+        data : pd.DataFrame
+            Market data containing price information
+        timestamp : datetime
+            The timestamp to use for extracting latest prices
+        """
+        try:
+            latest_data_slice = data.xs(timestamp, level=TIMESTAMP)
+            for ticker, row in latest_data_slice.iterrows():
+                if isinstance(ticker, str) and CLOSE in row and pd.notna(row[CLOSE]):
+                    self.portfolio.current_prices[ticker] = row[CLOSE]
+        except KeyError:
+            print(f"Warning: Could not extract data slice for timestamp {timestamp} in {self.name}")
 
     def calculate_position_size(self, ticker: str, signal: float) -> int:
         """

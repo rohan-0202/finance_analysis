@@ -173,68 +173,6 @@ class RSIMACDStrategy(Strategy):
 
         return combined_signals
 
-    def execute(self, data: pd.DataFrame) -> None:
-        """
-        Execute the RSI+MACD strategy.
-
-        Generates signals and places orders based on the latest data.
-
-        Parameters:
-        -----------
-        data : pd.DataFrame
-            Latest market data (MultiIndex expected).
-        """
-        if data.empty:
-            return
-
-        if not isinstance(data.index, pd.MultiIndex) or list(data.index.names) != [
-            TIMESTAMP,
-            TICKER,
-        ]:
-            print(
-                f"Error: Dataframe passed to {self.name}.execute does not have ('timestamp', 'ticker') MultiIndex."
-            )
-            return
-
-        latest_timestamp = data.index.get_level_values(TIMESTAMP).max()
-        self.last_update_time = latest_timestamp
-
-        # Update current prices in the portfolio
-        try:
-            latest_data_slice = data.xs(latest_timestamp, level=TIMESTAMP)
-            for ticker, row in latest_data_slice.iterrows():
-                if isinstance(ticker, str) and CLOSE in row and pd.notna(row[CLOSE]):
-                    self.portfolio.current_prices[ticker] = row[CLOSE]
-        except KeyError:
-            print(
-                f"Warning: Could not extract data slice for timestamp {latest_timestamp} in {self.name}"
-            )
-            pass  # Continue execution, potentially with stale prices
-
-        # Generate combined signals using the historical data provided
-        self.current_signals = self.generate_signals(data)
-
-        # Apply risk management (using base implementation for now)
-        adjusted_signals = self.apply_risk_management(self.current_signals)
-
-        # Execute trades based on adjusted signals
-        for ticker, signal in adjusted_signals.items():
-            if (
-                ticker not in self.portfolio.current_prices
-                or self.portfolio.current_prices[ticker] <= 0
-            ):
-                continue  # Skip if price is missing or invalid
-
-            target_shares = self.calculate_position_size(ticker, signal)
-            current_shares = self.portfolio.holdings.get(ticker, 0)
-            trade_shares = target_shares - current_shares
-
-            if trade_shares != 0:
-                self.place_order(ticker, trade_shares, latest_timestamp)
-
-        # Optional: Update portfolio value if needed here (often done in backtest loop)
-        # self.portfolio.update_value(latest_timestamp)
-
     @classmethod
     def get_default_parameters(cls) -> Dict[str, Any]:
         """

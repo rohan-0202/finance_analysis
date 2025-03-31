@@ -29,6 +29,7 @@ class RSIMACDVolatilityStrategy(RSIMACDStrategy):
     def __init__(self, portfolio: Portfolio):
         super().__init__(portfolio)
         logger.info("Initializing RSI+MACD+Volatility Strategy")
+        self.name = "RSI+MACD+Volatility Strategy"
 
     def _generate_rsi_signal(self, ticker_data: pd.Series, ticker: str) -> float:
         """Generates the RSI signal for a single ticker."""

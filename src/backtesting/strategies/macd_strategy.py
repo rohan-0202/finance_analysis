@@ -8,6 +8,7 @@ from backtesting.strategies.strategyutils.macd_util import (
     generate_macd_signal_for_ticker,
 )
 from backtesting.strategy import Strategy
+from common.data_requirements import DataRequirement
 from common.df_columns import CLOSE, TICKER
 
 
@@ -69,3 +70,7 @@ class MACDStrategy(Strategy):
             signals[ticker] = signal
 
         return signals
+
+    def get_data_requirements(self) -> list[DataRequirement]:
+        """MACD strategy only requires ticker data."""
+        return [DataRequirement.TICKER]

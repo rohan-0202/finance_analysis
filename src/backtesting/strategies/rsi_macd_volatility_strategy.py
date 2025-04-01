@@ -9,6 +9,7 @@ from backtesting.strategies.strategyutils.rsi_util import (
 from backtesting.strategies.strategyutils.volatililty_util import (
     get_volatility_regime,
 )
+from common.data_requirements import DataRequirement
 
 
 class RSIMACDVolatilityStrategy(RSIMACDStrategy):
@@ -39,3 +40,7 @@ class RSIMACDVolatilityStrategy(RSIMACDStrategy):
         self.set_parameters(**rsi_parameters)
 
         return super()._generate_rsi_signal(ticker_data, ticker)
+
+    def get_data_requirements(self) -> list[DataRequirement]:
+        """RSI+MACD+Volatility strategy requires ticker data."""
+        return [DataRequirement.TICKER]

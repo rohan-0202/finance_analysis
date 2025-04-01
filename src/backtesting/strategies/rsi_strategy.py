@@ -10,13 +10,13 @@ The strategy is based on the following principles:
 
 """
 
-from typing import Dict
+from typing import Dict, List
 
-import pandas as pd
 
 from backtesting.portfolio import Portfolio
 from backtesting.strategies.strategyutils.rsi_util import generate_rsi_signal_for_ticker
-from backtesting.strategy import Strategy
+from backtesting.strategy import DataDict, Strategy
+from common.data_requirements import DataRequirement
 from common.df_columns import CLOSE, TICKER
 
 
@@ -48,15 +48,19 @@ class RSIStrategy(Strategy):
         # Note: Commission is used directly from self.parameters in place_order
         return self
 
-    def generate_signals(self, data: pd.DataFrame) -> Dict[str, float]:
+    def get_data_requirements(self) -> List[DataRequirement]:
+        """RSI strategy only requires ticker data."""
+        return [DataRequirement.TICKER]
+
+    def generate_signals(self, data: DataDict) -> Dict[str, float]:
         """
-        Generate trading signals based on RSI.
+        Generate trading signals based on RSI using the ticker data.
 
         Parameters:
         -----------
-        data : pd.DataFrame
-            MultiIndex DataFrame with ('timestamp', 'Ticker') index
-            and 'close' column. Must contain enough history for RSI calculation.
+        data : DataDict
+            Dictionary containing the required data. Must include
+            DataRequirement.TICKER.
 
         Returns:
         --------
@@ -64,33 +68,37 @@ class RSIStrategy(Strategy):
             Dictionary mapping tickers to signal values (-1 Sell, 0 Neutral, 1 Buy)
         """
         signals = {}
-        if data.empty or CLOSE not in data.columns:
+        # Check if Ticker data is present
+        if DataRequirement.TICKER not in data:
+            print("Error: Ticker data not found in data dictionary for RSIStrategy.")
+            return signals
+
+        ticker_data_df = data[DataRequirement.TICKER]
+
+        if ticker_data_df.empty or CLOSE not in ticker_data_df.columns:
             return signals
 
         # Ensure index is sorted for rolling calculations
-        if not data.index.is_monotonic_increasing:
-            data = data.sort_index()
+        if not ticker_data_df.index.is_monotonic_increasing:
+            ticker_data_df = ticker_data_df.sort_index()
 
-        tickers = data.index.get_level_values(TICKER).unique()
+        tickers = ticker_data_df.index.get_level_values(TICKER).unique()
         min_required_data = (
             self.parameters["rsi_parameters"]["rsi_period"] + 1
         )  # Need diff, so period+1 points
 
         for ticker in tickers:
-            # Use .loc for potentially non-unique Ticker index slices if needed
-            # ticker_data = data.loc[(slice(None), ticker), 'close']
-            # Using xs assumes Ticker level is unique per timestamp or handles non-uniqueness gracefully
             try:
-                ticker_data = data.xs(ticker, level=TICKER)[CLOSE]
+                close_prices = ticker_data_df.xs(ticker, level=TICKER)[CLOSE]
             except KeyError:
                 continue  # Ticker not present in this data slice?
 
-            if len(ticker_data) < min_required_data:
+            if len(close_prices) < min_required_data:
                 signals[ticker] = 0.0  # Not enough data
                 continue
 
             signals[ticker] = generate_rsi_signal_for_ticker(
-                ticker_data,
+                close_prices,
                 self.parameters["rsi_parameters"],
             )
 

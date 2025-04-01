@@ -23,29 +23,13 @@ from typing import Dict, List, Optional, Type, Union
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from common.df_columns import CLOSE, HIGH, LOW, OPEN, TICKER, TIMESTAMP, VOLUME
 from backtesting.portfolio import Portfolio
+from backtesting.strategies.backtest_data_preparer import BacktestDataPreparer
 from backtesting.strategies.strategy_factory import StrategyFactory
 from backtesting.strategy import Strategy
-from db_util import get_historical_data
-
-
-def ensure_utc_tz(dt):
-    """Helper function to ensure datetime is in UTC timezone."""
-    if dt is None:
-        return None
-
-    if isinstance(dt, pd.Timestamp):
-        if dt.tz is None:
-            return dt.tz_localize("UTC")
-        else:
-            return dt.tz_convert("UTC")
-    else:  # Python datetime
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        else:
-            # Convert existing timezone to UTC
-            return dt.astimezone(timezone.utc)
+from common.data_requirements import DataRequirement
+from common.df_columns import CLOSE, HIGH, LOW, OPEN, TICKER, TIMESTAMP, VOLUME
+from common.tz_util import ensure_utc_tz
 
 
 class Backtest:
@@ -96,192 +80,7 @@ class Backtest:
         self.strategy = None
         self.data = None
         self.benchmark_data = None
-
-    def _prepare_data(
-        self,
-        tickers: Union[str, List[str]],
-        start_date: datetime,
-        end_date: datetime,
-        db_name: str,
-        data_buffer_months: int = 2,
-    ) -> pd.DataFrame:
-        """
-        Fetch and prepare historical data for backtesting.
-
-        Parameters:
-        -----------
-        tickers : str or List[str]
-            Ticker or list of tickers to backtest
-        start_date : datetime
-            Start date for the backtest
-        end_date : datetime
-            End date for the backtest
-        db_name : str
-            Database name to fetch data from
-        data_buffer_months : int, default 2
-            Number of months of additional data to fetch before start_date for calculations
-
-        Returns:
-        --------
-        pd.DataFrame
-            DataFrame with MultiIndex (Timestamp, Ticker) containing OHLCV data
-        """
-        if isinstance(tickers, str):
-            tickers = [tickers]
-
-        # Ensure start_date and end_date are UTC
-        start_date = ensure_utc_tz(start_date)
-        end_date = ensure_utc_tz(end_date)
-
-        # Calculate fetch start date with buffer
-        buffer_start_date = start_date - timedelta(days=data_buffer_months * 30)
-        buffer_start_date = ensure_utc_tz(buffer_start_date)
-
-        # Calculate days needed to fetch from buffer_start_date until *today*
-        # This ensures we definitely get the data up to 'end_date' using the existing
-        # get_historical_data function's logic.
-        today = datetime.now(timezone.utc)
-        days_to_fetch = (today - buffer_start_date).days + 1  # Add 1 for inclusivity
-        if days_to_fetch <= 0:
-            days_to_fetch = 1  # Fetch at least one day
-
-        all_data_raw = []
-
-        for ticker in tickers:
-            try:
-                # Fetch potentially *more* data than needed using the existing function
-                ticker_data_raw = get_historical_data(
-                    ticker_symbol=ticker, db_name=db_name, days=days_to_fetch
-                )
-
-                if ticker_data_raw.empty:
-                    # Don't warn here yet, filter first
-                    continue
-
-                # --- Filter the fetched data to the *required* range ---
-                # This is the core change: filter after fetching
-                ticker_data_filtered = ticker_data_raw[
-                    (ticker_data_raw.index >= buffer_start_date)
-                    & (ticker_data_raw.index <= end_date)
-                ].copy()
-                # ----------------------------------------------------------
-
-                if ticker_data_filtered.empty:
-                    print(
-                        f"Warning: No data found for {ticker} in required range {buffer_start_date.date()} to {end_date.date()}. Skipping."
-                    )
-                    continue
-
-                # Check if the filtered data actually starts after the buffer date
-                if ticker_data_filtered.index[0] > buffer_start_date:
-                    print(
-                        f"Warning: Data for {ticker} starts at {ticker_data_filtered.index[0].date()}, which is within the buffer period but after the intended buffer start {buffer_start_date.date()}."
-                    )
-
-                # Add Ticker column
-                ticker_data_filtered[TICKER] = ticker
-
-                # Reset index to prepare for MultiIndex
-                ticker_data_filtered = ticker_data_filtered.reset_index()
-
-                # Append the *filtered* data to our list
-                all_data_raw.append(ticker_data_filtered)
-
-            except ValueError as ve:
-                # Handle cases where get_historical_data legitimately finds no data at all
-                print(
-                    f"Warning: Could not fetch any data for {ticker} (up to {days_to_fetch} days back): {ve}. Skipping."
-                )
-                continue
-            except Exception as e:
-                print(f"Error processing data for {ticker}: {e}")
-                continue
-
-        if not all_data_raw:
-            # Raise error only if NO data was found for ANY ticker in the required range
-            raise ValueError(
-                "No valid data found for any ticker in the specified date range."
-            )
-
-        # Combine all *filtered* data into one DataFrame
-        combined_data = pd.concat(all_data_raw, ignore_index=True)
-
-        # Ensure 'timestamp' is tz-aware (UTC)
-        # The get_historical_data function should already return UTC timestamps
-        # but we double-check and ensure consistency here.
-        combined_data[TIMESTAMP] = pd.to_datetime(
-            combined_data[TIMESTAMP], errors="coerce", utc=True
-        )
-        combined_data.dropna(
-            subset=[TIMESTAMP], inplace=True
-        )  # Drop rows where conversion failed
-
-        if combined_data.empty:
-            # If after concatenation and timestamp handling, it's still empty
-            raise ValueError(
-                "Data became empty after processing timestamps. Check data quality."
-            )
-
-        # Create MultiIndex
-        combined_data = combined_data.set_index([TIMESTAMP, TICKER])
-
-        # Sort by timestamp and ticker
-        combined_data = combined_data.sort_index()
-
-        return combined_data
-
-    def _prepare_benchmark_data(
-        self, benchmark_ticker: str, all_data: pd.DataFrame
-    ) -> pd.Series:
-        """
-        Prepare benchmark data series for comparison.
-
-        Parameters:
-        -----------
-        benchmark_ticker : str
-            Ticker to use as benchmark
-        all_data : pd.DataFrame
-            DataFrame with all historical data
-
-        Returns:
-        --------
-        pd.Series
-            Series with benchmark values
-        """
-        if benchmark_ticker not in all_data.index.get_level_values(TICKER).unique():
-            return pd.Series(dtype=float)  # Empty series
-
-        # Get first timestamp in actual backtest (not buffer)
-        # Make sure backtest_start_date is tz-aware in the right way
-        backtest_start = ensure_utc_tz(self.backtest_start_date)
-
-        try:
-            # Get prices for the benchmark ticker
-            benchmark_prices = all_data.xs(benchmark_ticker, level=TICKER)["close"]
-
-            # Find closest timestamp at or after backtest start
-            start_idx = benchmark_prices.index.searchsorted(backtest_start)
-            if start_idx >= len(benchmark_prices):
-                return pd.Series(dtype=float)  # No data in backtest period
-
-            start_price = benchmark_prices.iloc[start_idx]
-            if pd.isna(start_price) or start_price <= 0:
-                return pd.Series(dtype=float)  # Invalid start price
-
-            # Calculate shares bought with initial capital
-            shares = self.initial_capital / start_price
-
-            # Calculate benchmark values
-            benchmark_values = benchmark_prices * shares
-
-            return benchmark_values
-
-        except Exception as e:
-            print(f"Error preparing benchmark data: {e}")
-            import traceback
-
-            traceback.print_exc()  # Print full traceback for detailed debugging
-            return pd.Series(dtype=float)
+        self.data_preparer = None
 
     def run(
         self,
@@ -330,8 +129,9 @@ class Backtest:
             allow_margin_trading=self.allow_margin_trading,
         )
 
-        # Initialize strategy with parameters
-        self.strategy = self.strategy_class(self.portfolio)
+        # Initialize strategy with parameters before fetching data
+        # so we can use its data requirements
+        self.strategy = self.strategy_class(portfolio=self.portfolio)
         if self.strategy_params:
             self.strategy.set_parameters(**self.strategy_params)
 
@@ -339,26 +139,40 @@ class Backtest:
         if "commission" not in self.strategy.parameters:
             self.strategy.set_parameters(commission=self.commission)
 
-        # Fetch and prepare data
+        # Initialize data preparer with the strategy
+        self.data_preparer = BacktestDataPreparer(self.strategy)
+
+        # Fetch and prepare data based on strategy requirements
         print(
             f"Fetching historical data for {tickers} from {start_date} to {end_date}..."
         )
-        all_data = self._prepare_data(tickers, start_date, end_date, db_name)
-        self.data = all_data
+        data_dict = self.data_preparer.prepare_data(
+            tickers, start_date, end_date, db_name
+        )
+        self.data = data_dict
+
+        # Make sure we have ticker data
+        if DataRequirement.TICKER not in data_dict:
+            raise ValueError("Ticker data is required for backtesting")
+
+        ticker_data = data_dict[DataRequirement.TICKER]
 
         # Prepare benchmark data if specified
         if benchmark_ticker:
-            self.benchmark_data = self._prepare_benchmark_data(
-                benchmark_ticker, all_data
+            self.benchmark_data = self.data_preparer.prepare_benchmark_data(
+                benchmark_ticker,
+                ticker_data,
+                self.backtest_start_date,
+                self.initial_capital,
             )
         else:
             self.benchmark_data = pd.Series(dtype=float)
 
         # Get unique timestamps within the actual backtest period (not buffer)
         backtest_timestamps = (
-            all_data[
-                (all_data.index.get_level_values(TIMESTAMP) >= start_date)
-                & (all_data.index.get_level_values(TIMESTAMP) <= end_date)
+            ticker_data[
+                (ticker_data.index.get_level_values(TIMESTAMP) >= start_date)
+                & (ticker_data.index.get_level_values(TIMESTAMP) <= end_date)
             ]
             .index.get_level_values(TIMESTAMP)
             .unique()
@@ -382,10 +196,12 @@ class Backtest:
                     f"Processing day {i + 1}/{len(backtest_timestamps)}: {current_timestamp.date()}"
                 )
 
-            # Provide data up to and including the current timestamp
-            data_slice = all_data[
-                all_data.index.get_level_values(TIMESTAMP) <= current_timestamp
-            ]
+            # Prepare data slice for each data type up to current timestamp
+            data_slice = {}
+            for req, df in data_dict.items():
+                data_slice[req] = df[
+                    df.index.get_level_values(TIMESTAMP) <= current_timestamp
+                ]
 
             # Prepare next day's data for trade execution
             next_day_data = {}
@@ -396,11 +212,11 @@ class Backtest:
 
                 try:
                     # Get all tickers for the next timestamp
-                    next_day_slice = all_data.xs(next_timestamp, level=TIMESTAMP)
+                    next_day_slice = ticker_data.xs(next_timestamp, level=TIMESTAMP)
 
                     # Build dictionary of next day OHLC data for each ticker
                     next_day_ohlc = {}
-                    for ticker in data_slice.index.get_level_values(TICKER).unique():
+                    for ticker in ticker_data.index.get_level_values(TICKER).unique():
                         if ticker in next_day_slice.index:
                             ticker_row = next_day_slice.loc[ticker]
                             next_day_ohlc[ticker] = {
@@ -417,10 +233,10 @@ class Backtest:
                     # No data for next timestamp
                     pass
 
-            if not data_slice.empty:
+            if not ticker_data.empty:
                 # Get the latest prices for all tickers at this timestamp
                 try:
-                    latest_data = data_slice.xs(current_timestamp, level=TIMESTAMP)
+                    latest_data = ticker_data.xs(current_timestamp, level=TIMESTAMP)
                     # Update portfolio's current prices
                     for ticker, row in latest_data.iterrows():
                         if (

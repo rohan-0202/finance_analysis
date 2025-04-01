@@ -8,6 +8,7 @@ from backtesting.strategies.strategyutils.macd_util import (
 )
 from backtesting.strategies.strategyutils.rsi_util import generate_rsi_signal_for_ticker
 from backtesting.strategy import Strategy
+from common.data_requirements import DataRequirement
 from common.df_columns import CLOSE, TICKER
 
 
@@ -42,15 +43,17 @@ class RSIMACDStrategy(Strategy):
             self.parameters["commission"] = kwargs["commission"]
         return self
 
-    def generate_signals(self, data: pd.DataFrame) -> Dict[str, float]:
+    def generate_signals(
+        self, data: Dict[DataRequirement, pd.DataFrame]
+    ) -> Dict[str, float]:
         """
         Generate combined trading signals based on RSI and MACD.
 
         Parameters:
         -----------
-        data : pd.DataFrame
-            MultiIndex DataFrame with ('timestamp', 'Ticker') index
-            and 'close' column.
+        data : Dict[DataRequirement, pd.DataFrame]
+            Dictionary of data required by the strategy where
+            keys are DataRequirement enums and values are DataFrames.
 
         Returns:
         --------
@@ -58,28 +61,37 @@ class RSIMACDStrategy(Strategy):
             Dictionary mapping tickers to combined signal values (-1 Sell, 0 Neutral, 1 Buy)
         """
         combined_signals = {}
-        if data.empty or CLOSE not in data.columns:
+
+        # Extract ticker data from the data dictionary
+        if (
+            DataRequirement.TICKER not in data
+            or data[DataRequirement.TICKER].empty
+            or CLOSE not in data[DataRequirement.TICKER].columns
+        ):
             return combined_signals
 
-        # Ensure index is sorted for rolling calculations
-        if not data.index.is_monotonic_increasing:
-            data = data.sort_index()
+        # Get the ticker data
+        ticker_data = data[DataRequirement.TICKER]
 
-        tickers = data.index.get_level_values(TICKER).unique()
+        # Ensure index is sorted for rolling calculations
+        if not ticker_data.index.is_monotonic_increasing:
+            ticker_data = ticker_data.sort_index()
+
+        tickers = ticker_data.index.get_level_values(TICKER).unique()
 
         for ticker in tickers:
             try:
-                ticker_data = data.xs(ticker, level=TICKER)[CLOSE]
+                ticker_data_series = ticker_data.xs(ticker, level=TICKER)[CLOSE]
             except KeyError:
                 combined_signals[ticker] = 0.0
                 continue  # Ticker not present
 
             # Generate individual signals
             rsi_signal = generate_rsi_signal_for_ticker(
-                ticker_data, self.parameters["rsi_parameters"]
+                ticker_data_series, self.parameters["rsi_parameters"]
             )
             macd_signal = generate_macd_signal_for_ticker(
-                ticker_data, self.parameters["macd"]
+                ticker_data_series, self.parameters["macd"]
             )
 
             # Combine signals: Trade if either signals, unless they conflict
@@ -125,3 +137,7 @@ class RSIMACDStrategy(Strategy):
             "max_capital_per_position": 0.9,
             "commission": 0.001,
         }
+
+    def get_data_requirements(self) -> list[DataRequirement]:
+        """RSI+MACD strategy requires ticker data."""
+        return [DataRequirement.TICKER]

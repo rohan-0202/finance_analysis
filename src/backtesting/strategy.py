@@ -1,12 +1,16 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List, TypeAlias
 
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
+from common.data_requirements import DataRequirement
 from common.df_columns import CLOSE, TICKER, TIMESTAMP
 from common.ohlc import OHLCData
+
+# Type alias for the data dictionary passed to strategies
+DataDict: TypeAlias = Dict[DataRequirement, pd.DataFrame]
 
 
 class Strategy(ABC):
@@ -40,14 +44,27 @@ class Strategy(ABC):
         return self
 
     @abstractmethod
-    def generate_signals(self, data: pd.DataFrame) -> Dict[str, float]:
+    def get_data_requirements(self) -> List[DataRequirement]:
         """
-        Generate trading signals for each ticker based on the data.
+        Declare the types of data required by the strategy.
+
+        Returns:
+        --------
+        List[DataRequirement]
+            A list of DataRequirement enums indicating the needed data.
+        """
+        pass
+
+    @abstractmethod
+    def generate_signals(self, data: DataDict) -> Dict[str, float]:
+        """
+        Generate trading signals for each ticker based on the provided data dictionary.
 
         Parameters:
         -----------
-        data : pd.DataFrame
-            Market data containing price and other information
+        data : DataDict
+            A dictionary where keys are DataRequirement enums and values are
+            DataFrames containing the corresponding data.
 
         Returns:
         --------
@@ -57,43 +74,44 @@ class Strategy(ABC):
         """
         pass
 
-    def execute(self, data: pd.DataFrame, next_day_data: dict[str, OHLCData]) -> None:
+    def execute(self, data: DataDict, next_day_data: dict[str, OHLCData]) -> None:
         """
-        Execute the strategy on the given data.
-
-        This is the main method that processes data, generates signals,
-        and executes trades based on those signals.
+        Execute the strategy using the provided data dictionary.
 
         Parameters:
         -----------
-        data : pd.DataFrame
-            Market data for the current time period
+        data : DataDict
+            Dictionary containing all the required data for the strategy.
         next_day_data : dict[str, OHLCData]
-            Market data for the next day. This is required because we cannot place any order
-            derived from the signal at the current day's close price. So a realistic simulation
-            should use the next day's prices for the order. This data is not used in the strategy calculation.
+            Market data for the next day, used for order execution price.
         """
-        if data.empty:
+        # Check if the primary ticker data is available
+        if DataRequirement.TICKER not in data or data[DataRequirement.TICKER].empty:
+            print(f"Warning: Ticker data missing or empty for {self.name}.execute.")
             return
 
-        # Ensure data has the expected MultiIndex
-        if not isinstance(data.index, pd.MultiIndex) or list(data.index.names) != [
+        ticker_data = data[DataRequirement.TICKER]
+
+        # Ensure ticker data has the expected MultiIndex
+        if not isinstance(ticker_data.index, pd.MultiIndex) or list(
+            ticker_data.index.names
+        ) != [
             TIMESTAMP,
             TICKER,
         ]:
             print(
-                f"Error: Dataframe passed to {self.name}.execute does not have ('timestamp', 'ticker') MultiIndex."
+                f"Error: Ticker data passed to {self.name}.execute does not have ('timestamp', 'ticker') MultiIndex."
             )
             return
 
-        # Get the latest timestamp from the data provided
-        latest_timestamp = data.index.get_level_values(TIMESTAMP).max()
+        # Get the latest timestamp from the ticker data
+        latest_timestamp = ticker_data.index.get_level_values(TIMESTAMP).max()
         self.last_update_time = latest_timestamp  # Update strategy timestamp
 
-        # Update portfolio's current prices
-        self._update_current_prices(data, latest_timestamp)
+        # Update portfolio's current prices using Ticker data
+        self._update_current_prices(ticker_data, latest_timestamp)
 
-        # Generate signals based on the historical data provided
+        # Generate signals using the full data dictionary provided
         self.current_signals = self.generate_signals(data)
 
         # Apply risk management
@@ -122,19 +140,19 @@ class Strategy(ABC):
                     ticker, trade_shares, latest_timestamp, next_day_data.get(ticker)
                 )
 
-    def _update_current_prices(self, data: pd.DataFrame, timestamp) -> None:
+    def _update_current_prices(self, ticker_data: pd.DataFrame, timestamp) -> None:
         """
-        Update the portfolio's current prices from the data at the given timestamp.
+        Update the portfolio's current prices from the ticker data at the given timestamp.
 
         Parameters:
         -----------
-        data : pd.DataFrame
-            Market data containing price information
+        ticker_data : pd.DataFrame
+            Market data containing price information (assumed to be the TICKER data)
         timestamp : datetime
             The timestamp to use for extracting latest prices
         """
         try:
-            latest_data_slice = data.xs(timestamp, level=TIMESTAMP)
+            latest_data_slice = ticker_data.xs(timestamp, level=TIMESTAMP)
             for ticker, row in latest_data_slice.iterrows():
                 if isinstance(ticker, str) and CLOSE in row and pd.notna(row[CLOSE]):
                     self.portfolio.current_prices[ticker] = row[CLOSE]
@@ -239,19 +257,21 @@ class Strategy(ABC):
         # Default implementation - subclasses can implement custom risk rules
         return signals
 
-    def update(self, data: pd.DataFrame) -> None:
+    def update(self, data: DataDict) -> None:
         """
         Update strategy state with new data without executing trades.
 
         Parameters:
         -----------
-        data : pd.DataFrame
-            New market data
+        data : DataDict
+            New market data dictionary.
         """
-        if data.empty:
+        if DataRequirement.TICKER not in data or data[DataRequirement.TICKER].empty:
             return
 
-        self.last_update_time = data.index[-1]
+        ticker_data = data[DataRequirement.TICKER]
+        self.last_update_time = ticker_data.index.get_level_values(TIMESTAMP).max()
+        # We still generate signals here based on potentially multiple data types
         self.current_signals = self.generate_signals(data)
 
     def get_performance_summary(self) -> Dict[str, Any]:

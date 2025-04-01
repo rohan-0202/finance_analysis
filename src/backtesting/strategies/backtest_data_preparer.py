@@ -4,9 +4,22 @@ from typing import Dict, List, Union
 import pandas as pd
 
 from backtesting.strategy import DataRequirement
-from common.df_columns import TICKER, TIMESTAMP
+from common.df_columns import (
+    ASK,
+    BID,
+    EXPIRATION_DATE,
+    IMPLIED_VOLATILITY,
+    LAST_PRICE,
+    LAST_UPDATED,
+    OPEN_INTEREST,
+    OPTION_TYPE,
+    STRIKE,
+    TICKER,
+    TIMESTAMP,
+    VOLUME,
+)
 from common.tz_util import ensure_utc_tz
-from db_util import get_historical_data
+from db_util import get_historical_data, get_options_data
 
 
 class BacktestDataPreparer:
@@ -251,31 +264,95 @@ class BacktestDataPreparer:
         Returns:
         --------
         pd.DataFrame
-            DataFrame with options data
+            DataFrame with MultiIndex (Timestamp, Ticker) containing options data
         """
-        # Implementation for fetching options data would go here
-        # For now, we return an empty DataFrame with the expected structure
 
-        columns = [
-            TIMESTAMP,
-            TICKER,
-            "strike_price",
-            "option_type",
-            "expiration_date",
-            "bid",
-            "ask",
-            "volume",
-            "open_interest",
-            "implied_volatility",
-        ]
+        all_data_raw = []
 
-        # Return empty DataFrame with expected columns
-        empty_df = pd.DataFrame(columns=columns)
-        empty_df = empty_df.set_index([TIMESTAMP, TICKER])
+        for ticker in tickers:
+            try:
+                # Fetch options data using the existing function
+                ticker_data_raw = get_options_data(
+                    ticker_symbol=ticker, db_name=db_name, days=days_to_fetch
+                )
 
-        print("Warning: Using placeholder implementation for options data")
+                if ticker_data_raw.empty:
+                    continue
 
-        return empty_df
+                # Add Ticker column
+                ticker_data_raw[TICKER] = ticker
+
+                # Reset index to prepare for MultiIndex
+                ticker_data_raw = ticker_data_raw.reset_index()
+
+                # Use last_updated as the timestamp for backtesting
+                ticker_data_raw[TIMESTAMP] = pd.to_datetime(
+                    ticker_data_raw[LAST_UPDATED]
+                )
+
+                # Filter the fetched data to the required range
+                ticker_data_filtered = ticker_data_raw[
+                    (ticker_data_raw[TIMESTAMP] >= buffer_start_date)
+                    & (ticker_data_raw[TIMESTAMP] <= end_date)
+                ].copy()
+
+                if ticker_data_filtered.empty:
+                    print(
+                        f"Warning: No options data found for {ticker} in required range {buffer_start_date.date()} to {end_date.date()}. Skipping."
+                    )
+                    continue
+
+                # Check if the filtered data actually starts after the buffer date
+                if ticker_data_filtered[TIMESTAMP].min() > buffer_start_date:
+                    print(
+                        f"Warning: Options data for {ticker} starts at {ticker_data_filtered[TIMESTAMP].min().date()}, which is within the buffer period but after the intended buffer start {buffer_start_date.date()}."
+                    )
+
+                # Append the filtered data to our list
+                all_data_raw.append(ticker_data_filtered)
+
+            except ValueError as ve:
+                print(
+                    f"Warning: Could not fetch any options data for {ticker} (up to {days_to_fetch} days back): {ve}. Skipping."
+                )
+                continue
+            except Exception as e:
+                print(f"Error fetching options data for {ticker}: {e}")
+                continue
+
+        if not all_data_raw:
+            print(
+                "Warning: No options data found for any tickers in the specified range."
+            )
+            # Return empty DataFrame with expected structure
+            columns = [
+                TIMESTAMP,
+                TICKER,
+                STRIKE,
+                OPTION_TYPE,
+                EXPIRATION_DATE,
+                LAST_PRICE,
+                BID,
+                ASK,
+                VOLUME,
+                OPEN_INTEREST,
+                IMPLIED_VOLATILITY,
+                LAST_UPDATED,
+            ]
+            empty_df = pd.DataFrame(columns=columns)
+            empty_df = empty_df.set_index([TIMESTAMP, TICKER])
+            return empty_df
+
+        # Combine all data
+        all_data = pd.concat(all_data_raw, axis=0)
+
+        # Set MultiIndex
+        all_data = all_data.set_index([TIMESTAMP, TICKER])
+
+        # Sort index
+        all_data = all_data.sort_index()
+
+        return all_data
 
     def prepare_benchmark_data(
         self,
@@ -336,3 +413,15 @@ class BacktestDataPreparer:
 
             traceback.print_exc()  # Print full traceback for detailed debugging
             return pd.Series(dtype=float)
+
+
+if __name__ == "__main__":
+    data_preparer = BacktestDataPreparer(None)
+    df = data_preparer._prepare_options_data(
+        tickers=["SPY"],
+        buffer_start_date=datetime(2025, 3, 10),
+        end_date=datetime(2025, 4, 1),
+        days_to_fetch=365,
+        db_name="stock_data.db",
+    )
+    print(df)

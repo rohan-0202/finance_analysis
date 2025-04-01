@@ -6,6 +6,7 @@ import pandas as pd
 
 from backtesting.portfolio import Portfolio
 from common.df_columns import CLOSE, TICKER, TIMESTAMP
+from common.ohlc import OHLCData
 
 
 class Strategy(ABC):
@@ -56,7 +57,7 @@ class Strategy(ABC):
         """
         pass
 
-    def execute(self, data: pd.DataFrame) -> None:
+    def execute(self, data: pd.DataFrame, next_day_data: dict[str, OHLCData]) -> None:
         """
         Execute the strategy on the given data.
 
@@ -67,6 +68,10 @@ class Strategy(ABC):
         -----------
         data : pd.DataFrame
             Market data for the current time period
+        next_day_data : dict[str, OHLCData]
+            Market data for the next day. This is required because we cannot place any order
+            derived from the signal at the current day's close price. So a realistic simulation
+            should use the next day's prices for the order. This data is not used in the strategy calculation.
         """
         if data.empty:
             return
@@ -113,12 +118,14 @@ class Strategy(ABC):
 
             if trade_shares != 0:
                 # Place the order using the base class method
-                self.place_order(ticker, trade_shares, latest_timestamp)
+                self.place_order(
+                    ticker, trade_shares, latest_timestamp, next_day_data.get(ticker)
+                )
 
     def _update_current_prices(self, data: pd.DataFrame, timestamp) -> None:
         """
         Update the portfolio's current prices from the data at the given timestamp.
-        
+
         Parameters:
         -----------
         data : pd.DataFrame
@@ -132,7 +139,9 @@ class Strategy(ABC):
                 if isinstance(ticker, str) and CLOSE in row and pd.notna(row[CLOSE]):
                     self.portfolio.current_prices[ticker] = row[CLOSE]
         except KeyError:
-            print(f"Warning: Could not extract data slice for timestamp {timestamp} in {self.name}")
+            print(
+                f"Warning: Could not extract data slice for timestamp {timestamp} in {self.name}"
+            )
 
     def calculate_position_size(self, ticker: str, signal: float) -> int:
         """
@@ -167,7 +176,9 @@ class Strategy(ABC):
         # Negative for sell, positive for buy
         return shares if signal > 0 else -shares
 
-    def place_order(self, ticker: str, quantity: int, timestamp: datetime) -> bool:
+    def place_order(
+        self, ticker: str, quantity: int, timestamp: datetime, next_day_data: OHLCData
+    ) -> bool:
         """
         Place an order to buy or sell a security.
 
@@ -188,7 +199,10 @@ class Strategy(ABC):
         if quantity == 0:
             return False
 
-        price = self.portfolio.current_prices.get(ticker)
+        if next_day_data is None:
+            return False
+
+        price = next_day_data["open"]
         if price is None:
             return False
 

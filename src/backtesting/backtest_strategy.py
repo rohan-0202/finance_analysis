@@ -23,11 +23,11 @@ from typing import Dict, List, Optional, Type, Union
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from common.df_columns import CLOSE, HIGH, LOW, OPEN, TICKER, TIMESTAMP, VOLUME
 from backtesting.portfolio import Portfolio
-from common.df_columns import TICKER, TIMESTAMP
+from backtesting.strategies.strategy_factory import StrategyFactory
 from backtesting.strategy import Strategy
 from db_util import get_historical_data
-from backtesting.strategies.strategy_factory import StrategyFactory
 
 
 def ensure_utc_tz(dt):
@@ -387,6 +387,36 @@ class Backtest:
                 all_data.index.get_level_values(TIMESTAMP) <= current_timestamp
             ]
 
+            # Prepare next day's data for trade execution
+            next_day_data = {}
+
+            # Check if there's a next timestamp available (not the last day)
+            if i < len(backtest_timestamps) - 1:
+                next_timestamp = backtest_timestamps[i + 1]
+
+                try:
+                    # Get all tickers for the next timestamp
+                    next_day_slice = all_data.xs(next_timestamp, level=TIMESTAMP)
+
+                    # Build dictionary of next day OHLC data for each ticker
+                    next_day_ohlc = {}
+                    for ticker in data_slice.index.get_level_values(TICKER).unique():
+                        if ticker in next_day_slice.index:
+                            ticker_row = next_day_slice.loc[ticker]
+                            next_day_ohlc[ticker] = {
+                                "open": ticker_row[OPEN],
+                                "high": ticker_row[HIGH],
+                                "low": ticker_row[LOW],
+                                "close": ticker_row[CLOSE],
+                                "volume": ticker_row.get(VOLUME, None),
+                            }
+
+                    if next_day_ohlc:
+                        next_day_data = next_day_ohlc
+                except KeyError:
+                    # No data for next timestamp
+                    pass
+
             if not data_slice.empty:
                 # Get the latest prices for all tickers at this timestamp
                 try:
@@ -404,7 +434,7 @@ class Backtest:
                     pass
 
                 # Execute the strategy for the current day
-                self.strategy.execute(data_slice)
+                self.strategy.execute(data_slice, next_day_data)
 
                 # Ensure portfolio equity history is updated for this timestamp
                 # This is needed for plotting, even if no trades were executed
@@ -528,11 +558,11 @@ class Backtest:
     def get_results_as_string(self) -> Optional[str]:
         """Generate backtest results and stats as a formatted string."""
         if not self.portfolio or not self.strategy:
-            return None # Indicate that results aren't ready
+            return None  # Indicate that results aren't ready
 
         metrics = self.get_performance_metrics()
         if "error" in metrics:
-             return f"Error retrieving metrics: {metrics['error']}"
+            return f"Error retrieving metrics: {metrics['error']}"
 
         output_lines = []
         separator = "=" * 50
@@ -540,17 +570,29 @@ class Backtest:
         output_lines.append("\n" + separator)
         output_lines.append(f"BACKTEST RESULTS: {self.strategy.name}")
         output_lines.append(separator)
-        output_lines.append(f"Period: {metrics['start_date'].date()} to {metrics['end_date'].date()}")
+        output_lines.append(
+            f"Period: {metrics['start_date'].date()} to {metrics['end_date'].date()}"
+        )
         output_lines.append(f"Initial Capital: ${metrics['initial_capital']:,.2f}")
-        output_lines.append(f"Final Portfolio Value: ${metrics['final_portfolio_value']:,.2f}")
+        output_lines.append(
+            f"Final Portfolio Value: ${metrics['final_portfolio_value']:,.2f}"
+        )
 
         profit_loss = metrics["final_portfolio_value"] - metrics["initial_capital"]
-        profit_loss_pct = profit_loss / metrics["initial_capital"] * 100 if metrics["initial_capital"] != 0 else 0
-        output_lines.append(f"Profit/Loss: ${profit_loss:,.2f} ({profit_loss_pct:.2f}%)")
+        profit_loss_pct = (
+            profit_loss / metrics["initial_capital"] * 100
+            if metrics["initial_capital"] != 0
+            else 0
+        )
+        output_lines.append(
+            f"Profit/Loss: ${profit_loss:,.2f} ({profit_loss_pct:.2f}%)"
+        )
 
         output_lines.append("\nPERFORMANCE METRICS:")
         output_lines.append(f"Total Return: {metrics.get('total_return', 0.0):.2%}")
-        output_lines.append(f"Annualized Return: {metrics.get('annualized_return', 0.0):.2%}")
+        output_lines.append(
+            f"Annualized Return: {metrics.get('annualized_return', 0.0):.2%}"
+        )
         output_lines.append(f"Volatility (Ann.): {metrics.get('volatility', 0.0):.2%}")
         output_lines.append(f"Sharpe Ratio: {metrics.get('sharpe_ratio', 0.0):.2f}")
         output_lines.append(f"Sortino Ratio: {metrics.get('sortino_ratio', 0.0):.2f}")
@@ -596,10 +638,18 @@ class Backtest:
                     output_lines.append("\nRECENT TRADES:")
                     # Ensure TIMESTAMP column exists and is datetime-like
                     if TIMESTAMP in trades_df.columns:
-                        trades_df[TIMESTAMP] = pd.to_datetime(trades_df[TIMESTAMP], errors='coerce')
-                        recent_trades = trades_df.sort_values(TIMESTAMP, ascending=False).head(5)
+                        trades_df[TIMESTAMP] = pd.to_datetime(
+                            trades_df[TIMESTAMP], errors="coerce"
+                        )
+                        recent_trades = trades_df.sort_values(
+                            TIMESTAMP, ascending=False
+                        ).head(5)
                         for _, trade in recent_trades.iterrows():
-                            ts_str = trade[TIMESTAMP].strftime("%Y-%m-%d") if pd.notna(trade[TIMESTAMP]) else "N/A"
+                            ts_str = (
+                                trade[TIMESTAMP].strftime("%Y-%m-%d")
+                                if pd.notna(trade[TIMESTAMP])
+                                else "N/A"
+                            )
                             direction = trade["direction"]
                             ticker = trade[TICKER]
                             quantity = abs(trade["quantity"])
@@ -609,7 +659,9 @@ class Backtest:
                                 f"  {ts_str} - {direction} {quantity} {ticker} @ ${price:.2f} (Value: ${value:.2f})"
                             )
                     else:
-                        output_lines.append("  (Timestamp column missing in trade history)")
+                        output_lines.append(
+                            "  (Timestamp column missing in trade history)"
+                        )
             except Exception as trade_err:
                 output_lines.append(f"  (Error generating trade summary: {trade_err})")
 

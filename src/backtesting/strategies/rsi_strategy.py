@@ -26,15 +26,7 @@ class RSIStrategy(Strategy):
     def __init__(self, portfolio: Portfolio):
         super().__init__("RSI Strategy", portfolio)
         # Initialize parameters with defaults
-        self.parameters = {
-            "rsi_parameters": {
-                "rsi_period": 14,
-                "overbought_threshold": 70,
-                "oversold_threshold": 30,
-            },
-            "max_capital_per_position": 0.1,
-            "commission": 0.0,
-        }
+        self.parameters = self.get_default_parameters()
 
     def set_parameters(self, **kwargs):
         """Set strategy parameters and update signal object."""
@@ -81,7 +73,7 @@ class RSIStrategy(Strategy):
 
         tickers = data.index.get_level_values(TICKER).unique()
         min_required_data = (
-            self.parameters["rsi_period"] + 1
+            self.parameters["rsi_parameters"]["rsi_period"] + 1
         )  # Need diff, so period+1 points
 
         for ticker in tickers:
@@ -120,6 +112,6 @@ class RSIStrategy(Strategy):
                 "overbought_threshold": 70,
                 "oversold_threshold": 30,
             },
-            "max_capital_per_position": 0.1,
+            "max_capital_per_position": 0.9,
             "commission": 0.0,
         }

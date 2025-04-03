@@ -48,7 +48,8 @@ class RSIMACDStrategy(Strategy):
         self, data: Dict[DataRequirement, pd.DataFrame]
     ) -> Dict[str, float]:
         """
-        Generate combined trading signals based on RSI and MACD.
+        Generate combined trading signals based on RSI and MACD with nuanced strength.
+        This implementation favors aggressive trading while maintaining signal quality.
 
         Parameters:
         -----------
@@ -80,6 +81,15 @@ class RSIMACDStrategy(Strategy):
 
         tickers = ticker_data.index.get_level_values(TICKER).unique()
 
+        # Get strategy parameters
+        dominant_weight = self.parameters.get(
+            "dominant_weight", 0.7
+        )  # Weight for stronger signal
+        secondary_weight = 1.0 - dominant_weight  # Weight for weaker signal
+        min_signal_threshold = self.parameters.get(
+            "min_signal_threshold", 0.1
+        )  # Lower threshold
+
         for ticker in tickers:
             try:
                 ticker_data_series = ticker_data.xs(ticker, level=TICKER)[CLOSE]
@@ -95,19 +105,44 @@ class RSIMACDStrategy(Strategy):
                 ticker_data_series, self.parameters["macd"]
             )
 
-            # Combine signals: Trade if either signals, unless they conflict
-            signal = 0.0
-            if rsi_signal == 1 and macd_signal != -1:
-                signal = 1.0
-            elif macd_signal == 1 and rsi_signal != -1:
-                signal = 1.0
-            elif rsi_signal == -1 and macd_signal != 1:
-                signal = -1.0
-            elif macd_signal == -1 and rsi_signal != 1:
-                signal = -1.0
-            # else: signal remains 0.0 (Neutral, including conflict case where one is 1 and other is -1)
+            # Determine which signal is stronger and order them
+            if abs(rsi_signal) >= abs(macd_signal):
+                dominant_signal = rsi_signal
+                secondary_signal = macd_signal
+            else:
+                dominant_signal = macd_signal
+                secondary_signal = rsi_signal
 
-            combined_signals[ticker] = signal
+            # Calculate combined signal - weighted toward the stronger signal
+            # but still incorporating both
+            combined_signal = (dominant_weight * dominant_signal) + (
+                secondary_weight * secondary_signal
+            )
+
+            # Handle cases where signals are in opposite directions
+            signals_same_direction = (rsi_signal * macd_signal) > 0
+
+            if not signals_same_direction:
+                # If signals disagree but one is much stronger than the other,
+                # still generate a trade signal in the direction of the stronger one
+                if abs(dominant_signal) > 2 * abs(secondary_signal):
+                    # Keep 80% of the dominant signal
+                    combined_signal = 0.8 * dominant_signal
+                # If similar strength but disagreeing, reduce signal (but don't eliminate)
+                else:
+                    combined_signal *= 0.5
+            else:
+                # Signals agree - amplify the combined signal
+                if combined_signal > 0:
+                    combined_signal = min(combined_signal * 1.2, 1.0)
+                elif combined_signal < 0:
+                    combined_signal = max(combined_signal * 1.2, -1.0)
+
+            # Apply minimum threshold - using a lower threshold to be more aggressive
+            if abs(combined_signal) < min_signal_threshold:
+                combined_signal = 0.0
+
+            combined_signals[ticker] = combined_signal
 
         return combined_signals
 
@@ -134,7 +169,10 @@ class RSIMACDStrategy(Strategy):
                 "slow_period": 26,
                 "signal_period": 9,
             },
-            # Shared/Risk defaults (using RSI's as base, can be adjusted)
+            # Signal combination parameters
+            "dominant_weight": 0.7,  # Weight given to the stronger signal
+            "min_signal_threshold": 0.1,  # Lower threshold for more trading opportunities
+            # Shared/Risk defaults
             "max_capital_per_position": 0.9,
             "commission": 0.001,
             "use_stop_loss": True,

@@ -16,10 +16,11 @@ Bollinger Bands consist of:
 
 from typing import Dict, List, Optional
 
-import pandas as pd
 
 from backtesting.portfolio import Portfolio
-from backtesting.strategies.strategyutils.bollinger_bands_util import generate_bollinger_bands_signal_for_ticker
+from backtesting.strategies.strategyutils.bollinger_bands_util import (
+    generate_bollinger_bands_signal_for_ticker,
+)
 from backtesting.strategy import DataDict, Strategy
 from common.data_requirements import DataRequirement
 from common.df_columns import CLOSE, TICKER
@@ -48,7 +49,9 @@ class MeanReversionStrategy(Strategy):
         if "num_std" in kwargs:
             self.parameters["bollinger_bands_parameters"]["num_std"] = kwargs["num_std"]
         if "max_capital_per_position" in kwargs:
-            self.parameters["max_capital_per_position"] = kwargs["max_capital_per_position"]
+            self.parameters["max_capital_per_position"] = kwargs[
+                "max_capital_per_position"
+            ]
         if "trailing_stop_pct" in kwargs:
             self.parameters["trailing_stop_pct"] = kwargs["trailing_stop_pct"]
         if "use_ema" in kwargs:
@@ -77,10 +80,12 @@ class MeanReversionStrategy(Strategy):
             Dictionary mapping tickers to signal values (-1 Sell, 0 Neutral, 1 Buy)
         """
         signals = {}
-        
+
         # Check if Ticker data is present
         if DataRequirement.TICKER not in data:
-            print("Error: Ticker data not found in data dictionary for MeanReversionStrategy.")
+            print(
+                "Error: Ticker data not found in data dictionary for MeanReversionStrategy."
+            )
             return signals
 
         ticker_data_df = data[DataRequirement.TICKER]
@@ -94,28 +99,28 @@ class MeanReversionStrategy(Strategy):
 
         tickers = ticker_data_df.index.get_level_values(TICKER).unique()
         window = self.parameters["bollinger_bands_parameters"]["window"]
-        
+
         for ticker in tickers:
             try:
                 close_prices = ticker_data_df.xs(ticker, level=TICKER)[CLOSE]
                 current_price = close_prices.iloc[-1]
-                
+
                 # Update previous prices
                 if ticker not in self.prev_prices:
                     self.prev_prices[ticker] = current_price
-                
+
                 # Check if we need to exit based on trailing stop
                 signal = self._check_stop_loss(ticker, current_price)
                 if signal is not None:
                     signals[ticker] = signal
                     continue
-                
+
                 # Check profit target if we have a position
                 signal = self._check_profit_target(ticker, current_price)
                 if signal is not None:
                     signals[ticker] = signal
                     continue
-                
+
                 # If no stop or profit target triggered, calculate regular signal
                 if len(close_prices) < window:
                     signals[ticker] = 0.0  # Not enough data
@@ -126,52 +131,55 @@ class MeanReversionStrategy(Strategy):
                     close_prices,
                     self.parameters["bollinger_bands_parameters"],
                 )
-                
+
                 # If we get a signal at all, make it stronger (more aggressive)
                 if signal > 0:
                     signal = min(signal * 1.5, 1.0)  # Scale up buy signals
                 elif signal < 0:
                     signal = max(signal * 1.5, -1.0)  # Scale up sell signals
-                
+
                 signals[ticker] = signal
-                
+
                 # Store previous price for next iteration
                 self.prev_prices[ticker] = current_price
-                
+
             except KeyError:
                 continue  # Ticker not present in this data slice?
 
         return signals
-        
+
     def _check_stop_loss(self, ticker: str, current_price: float) -> Optional[float]:
         """
         Check if a trailing stop loss should be triggered.
-        
+
         Parameters:
         -----------
         ticker: str
             Ticker symbol
         current_price: float
             Current price of the ticker
-            
+
         Returns:
         --------
         Optional[float]
             Signal value if stop loss triggered, None otherwise
         """
         # If we don't have a position, no stop loss to check
-        if ticker not in self.portfolio.holdings or self.portfolio.holdings[ticker] == 0:
+        if (
+            ticker not in self.portfolio.holdings
+            or self.portfolio.holdings[ticker] == 0
+        ):
             # Clear any stale stop loss data
             if ticker in self.stop_losses:
                 del self.stop_losses[ticker]
             if ticker in self.entry_prices:
                 del self.entry_prices[ticker]
             return None
-            
+
         # Get current position direction (long/short)
         position = self.portfolio.holdings[ticker]
         is_long = position > 0
-        
+
         # If this is a new position, set initial stop loss
         if ticker not in self.stop_losses:
             self.entry_prices[ticker] = current_price
@@ -181,7 +189,7 @@ class MeanReversionStrategy(Strategy):
             else:
                 self.stop_losses[ticker] = current_price * (1 + trailing_stop_pct)
             return None
-            
+
         # Update trailing stop if price moved in our favor
         trailing_stop_pct = self.parameters.get("trailing_stop_pct", 0.05)
         if is_long:
@@ -189,7 +197,7 @@ class MeanReversionStrategy(Strategy):
             potential_new_stop = current_price * (1 - trailing_stop_pct)
             if potential_new_stop > self.stop_losses[ticker]:
                 self.stop_losses[ticker] = potential_new_stop
-                
+
             # Check if stop was hit
             if current_price <= self.stop_losses[ticker]:
                 # Stop loss hit, exit position
@@ -199,41 +207,45 @@ class MeanReversionStrategy(Strategy):
             potential_new_stop = current_price * (1 + trailing_stop_pct)
             if potential_new_stop < self.stop_losses[ticker]:
                 self.stop_losses[ticker] = potential_new_stop
-                
+
             # Check if stop was hit
             if current_price >= self.stop_losses[ticker]:
                 # Stop loss hit, exit position
                 return 1.0
-                
+
         return None
-        
-    def _check_profit_target(self, ticker: str, current_price: float) -> Optional[float]:
+
+    def _check_profit_target(
+        self, ticker: str, current_price: float
+    ) -> Optional[float]:
         """
         Check if profit target has been reached.
-        
+
         Parameters:
         -----------
         ticker: str
             Ticker symbol
         current_price: float
             Current price of the ticker
-            
+
         Returns:
         --------
         Optional[float]
             Signal value if profit target reached, None otherwise
         """
         # If we don't have a position or entry price, nothing to check
-        if (ticker not in self.portfolio.holdings or 
-            self.portfolio.holdings[ticker] == 0 or
-            ticker not in self.entry_prices):
+        if (
+            ticker not in self.portfolio.holdings
+            or self.portfolio.holdings[ticker] == 0
+            or ticker not in self.entry_prices
+        ):
             return None
-            
+
         # Get current position direction and profit target
         position = self.portfolio.holdings[ticker]
         is_long = position > 0
         profit_target_pct = self.parameters.get("profit_target_pct", 0.15)
-        
+
         # Check if profit target reached
         entry_price = self.entry_prices[ticker]
         if is_long:
@@ -244,23 +256,23 @@ class MeanReversionStrategy(Strategy):
             profit_pct = (entry_price - current_price) / entry_price
             if profit_pct >= profit_target_pct:
                 return 1.0  # Buy signal to cover short
-                
+
         return None
 
     def apply_risk_management(self, signals: Dict[str, float]) -> Dict[str, float]:
         """
         Apply risk management rules to adjust trading signals.
-        
+
         For mean reversion, we might want to adjust signals based on:
         - Overall market conditions
         - Position concentration
         - Volatility
-        
+
         Parameters:
         -----------
         signals : Dict[str, float]
             Original trading signals
-            
+
         Returns:
         --------
         Dict[str, float]
@@ -268,40 +280,52 @@ class MeanReversionStrategy(Strategy):
         """
         # Simple implementation - could be enhanced with more sophisticated rules
         adjusted_signals = {}
-        
+
         # Get current positions
-        current_positions = {ticker: shares for ticker, shares in self.portfolio.holdings.items() if shares != 0}
-        
+        current_positions = {
+            ticker: shares
+            for ticker, shares in self.portfolio.holdings.items()
+            if shares != 0
+        }
+
         # Calculate maximum number of open positions
         max_positions = self.parameters.get("max_open_positions", 4)
         current_position_count = len(current_positions)
-        
+
         for ticker, signal in signals.items():
             # If signal is to exit, always allow it
-            if (ticker in current_positions and 
-                ((signal < 0 and current_positions[ticker] > 0) or
-                 (signal > 0 and current_positions[ticker] < 0))):
+            if ticker in current_positions and (
+                (signal < 0 and current_positions[ticker] > 0)
+                or (signal > 0 and current_positions[ticker] < 0)
+            ):
                 adjusted_signals[ticker] = signal
                 continue
-                
+
             # If we already have too many positions, only allow exits
-            if current_position_count >= max_positions and ticker not in current_positions:
+            if (
+                current_position_count >= max_positions
+                and ticker not in current_positions
+            ):
                 adjusted_signals[ticker] = 0.0
                 continue
-                
+
             # For existing positions, adjust signal strength based on current position
             if ticker in current_positions and abs(current_positions[ticker]) > 0:
                 # If we already have a position and signal is in same direction, reduce it
                 current_position_sign = 1 if current_positions[ticker] > 0 else -1
-                if (signal > 0 and current_position_sign > 0) or (signal < 0 and current_position_sign < 0):
+                if (signal > 0 and current_position_sign > 0) or (
+                    signal < 0 and current_position_sign < 0
+                ):
                     # Don't add to existing positions for mean reversion
-                    adjusted_signals[ticker] = 0.0  
+                    adjusted_signals[ticker] = 0.0
                 else:
-                    adjusted_signals[ticker] = signal  # Keep as is for reversing positions
+                    adjusted_signals[ticker] = (
+                        signal  # Keep as is for reversing positions
+                    )
             else:
                 # For new positions, keep original signal strength
                 adjusted_signals[ticker] = signal
-                
+
         return adjusted_signals
 
     def calculate_position_size(self, ticker: str, signal: float) -> int:
@@ -359,4 +383,4 @@ class MeanReversionStrategy(Strategy):
             "trailing_stop_pct": 0.05,  # 5% trailing stop
             "profit_target_pct": 0.15,  # 15% profit target
             "max_open_positions": 4,  # Maximum number of open positions
-        } 
+        }

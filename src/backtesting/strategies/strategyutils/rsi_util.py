@@ -1,6 +1,5 @@
 from typing import TypedDict
 
-import numpy as np
 import pandas as pd
 import ta
 
@@ -99,23 +98,24 @@ def generate_rsi_signal_for_ticker(
     rsi_parameters: RsiParams,
 ) -> float:
     """
-    Generate an RSI signal for a ticker.
+    Generate an RSI signal for a ticker with continuous strength between -1 and 1.
+
+    The signal strength is based on:
+    - How far RSI is from normal range boundaries
+    - Distance from neutral (50) for values within the normal range
 
     Args:
         ticker_data (pd.Series): The ticker data.
         rsi_parameters (RsiParams): The RSI parameters.
 
     Returns:
+        float: Signal value between -1 (strongest sell) and 1 (strongest buy)
     """
     if ticker_data.empty or len(ticker_data) < rsi_parameters["rsi_period"]:
-        # Return an empty series or series of NaNs matching the input index length
-        # Ensure index is preserved for alignment later
-        return pd.Series(
-            [np.nan] * len(ticker_data), index=ticker_data.index, dtype=float
-        )
+        # Return 0 (neutral) if not enough data
+        return 0.0
 
     # Use the ta library to calculate RSI
-    # fillna=False prevents filling initial NaNs required for window calculation
     rsi_indicator = ta.momentum.RSIIndicator(
         close=ticker_data, window=rsi_parameters["rsi_period"], fillna=False
     )
@@ -126,9 +126,40 @@ def generate_rsi_signal_for_ticker(
 
     latest_rsi = rsi_series.iloc[-1]
 
-    if latest_rsi > rsi_parameters["overbought_threshold"]:
-        return -1.0  # Sell signal (Overbought)
-    elif latest_rsi < rsi_parameters["oversold_threshold"]:
-        return 1.0  # Buy signal (Oversold)
+    # Get the thresholds from parameters
+    oversold = rsi_parameters["oversold_threshold"]
+    overbought = rsi_parameters["overbought_threshold"]
+
+    # Calculate the signal strength based on RSI value
+    if latest_rsi <= oversold:
+        # Buy signal (Oversold) - scale from 0.5 to 1.0 based on how low RSI is
+        # 0 RSI (theoretical min) = 1.0 signal, oversold threshold = 0.5 signal
+        signal_strength = 0.5 + 0.5 * (oversold - latest_rsi) / oversold
+        return min(signal_strength, 1.0)  # Cap at 1.0
+
+    elif latest_rsi >= overbought:
+        # Sell signal (Overbought) - scale from -0.5 to -1.0 based on how high RSI is
+        # 100 RSI (theoretical max) = -1.0 signal, overbought threshold = -0.5 signal
+        signal_strength = -0.5 - 0.5 * (latest_rsi - overbought) / (100 - overbought)
+        return max(signal_strength, -1.0)  # Cap at -1.0
+
     else:
-        return 0.0  # Neutral signal
+        # Neutral range - provide smaller signal based on distance from 50 (neutral RSI)
+        # Scale from -0.5 to 0.5 based on position within the neutral band
+        # Above 50 = negative signal (potential sell), Below 50 = positive signal (potential buy)
+        neutral_point = 50
+        max_neutral_signal = 0.5  # Maximum strength for signals within neutral range
+
+        # Calculate normalized position within neutral band (-1 to 1)
+        if latest_rsi > neutral_point:
+            # Above 50 - slight sell signal
+            normalized_position = (latest_rsi - neutral_point) / (
+                overbought - neutral_point
+            )
+            return -max_neutral_signal * min(normalized_position, 1.0)
+        else:
+            # Below 50 - slight buy signal
+            normalized_position = (neutral_point - latest_rsi) / (
+                neutral_point - oversold
+            )
+            return max_neutral_signal * min(normalized_position, 1.0)

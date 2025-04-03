@@ -1,7 +1,7 @@
 {
     "simulation": {
-      "name": "RSI+MACD Strategy Random Stock Testing",
-      "description": "Testing RSI+MACD strategy on 50 random sets of stocks over 2021-2025",
+      "name": "RSI+MACD Strategy Volatility Random Stock Testing",
+      "description": "Testing RSI+MACD strategy on 50 random sets of stocks over 2021-2025 with volatility as a filter",
       "version": "1.0",
       "created_at": "2025-03-30",
       "data_source": {
@@ -11,7 +11,7 @@
         {
           "id": "rsi_macd_base",
           "strategy": {
-            "name": "rsi_macd_strategy",
+            "name": "rsi_macd_volatility_strategy",
             "parameters": {
               "rsi_period": 14,
               "overbought_threshold": 60,
@@ -77,7 +77,7 @@
               "market_cap_min": 1000000000,
               "exclude_tickers": []
             },
-            "iterations": 2,
+            "iterations": 5,
             "seeds": [42, 101]
           },
           "output_prefix": "random_run_"

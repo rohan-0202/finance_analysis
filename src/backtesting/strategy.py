@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, List, TypeAlias
+from typing import Any, Dict, List, Optional, TypeAlias
 
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
+from backtesting.risk_management.stop_loss_manager import (
+    StopLossManager,
+)
 from common.data_requirements import DataRequirement
 from common.df_columns import CLOSE, TICKER, TIMESTAMP
 from common.ohlc import OHLCData
@@ -37,6 +40,7 @@ class Strategy(ABC):
         self.parameters = {}  # Strategy parameters
         self.current_signals = {}  # Current trading signals for each ticker
         self.last_update_time = None  # Timestamp of last strategy update
+        self.stop_loss_manager: Optional[StopLossManager] = None  # Stop loss manager
 
     def set_parameters(self, **kwargs):
         """Set strategy parameters."""
@@ -114,8 +118,46 @@ class Strategy(ABC):
         # Generate signals using the full data dictionary provided
         self.current_signals = self.generate_signals(data)
 
+        # Initialize stop loss manager if enabled
+        if (
+            self.parameters.get("use_stop_loss", False)
+            and "stop_loss_parameters" in self.parameters
+        ):
+            if self.stop_loss_manager is None:
+                self.stop_loss_manager = StopLossManager(
+                    self.portfolio, self.parameters["stop_loss_parameters"]
+                )
+
+        # Apply stop loss checks if manager is active
+        stop_loss_signals = {}
+        if self.stop_loss_manager is not None:
+            # Extract latest prices for stop loss check
+            latest_data = ticker_data.xs(
+                latest_timestamp, level=TIMESTAMP, drop_level=False
+            )
+            for idx, row in latest_data.iterrows():
+                timestamp, ticker = idx
+                current_price = row[CLOSE]
+
+                # Update entry prices for new positions
+                if (
+                    ticker in self.portfolio.holdings
+                    and ticker not in self.stop_loss_manager.entry_prices
+                ):
+                    self.stop_loss_manager.update_entry_price(ticker, current_price)
+
+                # Check stop loss for this ticker
+                stop_signal = self.stop_loss_manager.check_stop_loss(
+                    ticker, current_price
+                )
+                if stop_signal is not None:
+                    stop_loss_signals[ticker] = stop_signal
+
         # Apply risk management
         adjusted_signals = self.apply_risk_management(self.current_signals)
+
+        # Override signals with stop loss signals if any
+        adjusted_signals.update(stop_loss_signals)
 
         # Execute trades based on adjusted signals
         for ticker, signal in adjusted_signals.items():
@@ -139,6 +181,15 @@ class Strategy(ABC):
                 self.place_order(
                     ticker, trade_shares, latest_timestamp, next_day_data.get(ticker)
                 )
+
+                # If we've just exited a position, clear the entry price
+                if (
+                    current_shares != 0
+                    and (current_shares + trade_shares) == 0
+                    and self.stop_loss_manager is not None
+                ):
+                    if ticker in self.stop_loss_manager.entry_prices:
+                        del self.stop_loss_manager.entry_prices[ticker]
 
     def _update_current_prices(self, ticker_data: pd.DataFrame, timestamp) -> None:
         """
@@ -254,6 +305,20 @@ class Strategy(ABC):
         Dict[str, float]
             Adjusted trading signals after risk management
         """
+        # If stop loss manager exists and is using adaptive stop loss features,
+        # update consecutive losses for any tickers that have a new losing trade
+        if self.stop_loss_manager is not None and self.parameters.get(
+            "use_stop_loss", False
+        ):
+            if self.parameters.get("stop_loss_parameters", {}).get(
+                "use_martingale", False
+            ):
+                # Here we would track consecutive losses for adapting stops
+                # This would typically be updated when trades are closed at a loss
+                # For this implementation, the logic would need trade history data
+                # Which is beyond the scope of this implementation
+                pass
+
         # Default implementation - subclasses can implement custom risk rules
         return signals
 
@@ -270,9 +335,43 @@ class Strategy(ABC):
             return
 
         ticker_data = data[DataRequirement.TICKER]
-        self.last_update_time = ticker_data.index.get_level_values(TIMESTAMP).max()
+        latest_timestamp = ticker_data.index.get_level_values(TIMESTAMP).max()
+        self.last_update_time = latest_timestamp
+
+        # Update portfolio prices
+        self._update_current_prices(ticker_data, latest_timestamp)
+
         # We still generate signals here based on potentially multiple data types
         self.current_signals = self.generate_signals(data)
+
+        # Initialize stop loss manager if it doesn't exist but is enabled
+        if (
+            self.parameters.get("use_stop_loss", False)
+            and "stop_loss_parameters" in self.parameters
+            and self.stop_loss_manager is None
+        ):
+            self.stop_loss_manager = StopLossManager(
+                self.portfolio, self.parameters["stop_loss_parameters"]
+            )
+
+        # Update stop losses without executing trades
+        if self.stop_loss_manager is not None:
+            latest_data = ticker_data.xs(
+                latest_timestamp, level=TIMESTAMP, drop_level=False
+            )
+            for idx, row in latest_data.iterrows():
+                timestamp, ticker = idx
+                current_price = row[CLOSE]
+
+                # Update entry prices for new positions
+                if (
+                    ticker in self.portfolio.holdings
+                    and ticker not in self.stop_loss_manager.entry_prices
+                ):
+                    self.stop_loss_manager.update_entry_price(ticker, current_price)
+
+                # Check stop loss levels without acting on signals
+                self.stop_loss_manager.check_stop_loss(ticker, current_price)
 
     def get_performance_summary(self) -> Dict[str, Any]:
         """

@@ -12,8 +12,8 @@ The strategy is based on the following principles:
 
 from typing import Dict, List
 
-
 from backtesting.portfolio import Portfolio
+from backtesting.risk_management.stop_loss_manager import StopLossParameters
 from backtesting.strategies.strategyutils.rsi_util import generate_rsi_signal_for_ticker
 from backtesting.strategy import DataDict, Strategy
 from common.data_requirements import DataRequirement
@@ -117,9 +117,11 @@ class RSIStrategy(Strategy):
         return {
             "rsi_parameters": {
                 "rsi_period": 14,
-                "overbought_threshold": 70,
-                "oversold_threshold": 30,
+                "overbought_threshold": 60,
+                "oversold_threshold": 40,
             },
             "max_capital_per_position": 0.9,
             "commission": 0.0,
+            "use_stop_loss": True,
+            "stop_loss_parameters": StopLossParameters.get_defaults(),
         }

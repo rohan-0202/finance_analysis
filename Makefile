@@ -55,7 +55,7 @@ run_simulation:
 
 test_strategy:
 	$(eval strategy=$(word 2,$(MAKECMDGOALS)))
-	uv run python src/backtesting/backtest_strategy.py run --strategy $(strategy) --months 24 --ticker 'SPY' --plot
+	uv run python src/backtesting/backtest_strategy.py run --strategy $(strategy) --months 24 --ticker 'NVDA' --plot
 
 format:
 	uv run ruff format . 

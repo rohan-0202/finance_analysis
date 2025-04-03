@@ -3,6 +3,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
+from backtesting.risk_management.stop_loss_manager import StopLossParameters
 from backtesting.strategies.strategyutils.macd_util import (
     generate_macd_signal_for_ticker,
 )
@@ -136,6 +137,8 @@ class RSIMACDStrategy(Strategy):
             # Shared/Risk defaults (using RSI's as base, can be adjusted)
             "max_capital_per_position": 0.9,
             "commission": 0.001,
+            "use_stop_loss": True,
+            "stop_loss_parameters": StopLossParameters.get_defaults(),
         }
 
     def get_data_requirements(self) -> list[DataRequirement]:

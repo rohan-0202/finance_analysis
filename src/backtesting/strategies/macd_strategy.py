@@ -3,6 +3,7 @@ from typing import Dict, TypedDict
 import pandas as pd
 
 from backtesting.portfolio import Portfolio
+from backtesting.risk_management.stop_loss_manager import StopLossParameters
 from backtesting.strategies.strategyutils.macd_util import (
     MACDParameters,
     generate_macd_signal_for_ticker,
@@ -29,6 +30,8 @@ class MACDStrategy(Strategy):
             },
             "max_capital_per_position": 0.9,
             "commission": 0.0,
+            "use_stop_loss": True,
+            "stop_loss_parameters": StopLossParameters.get_defaults(),
         }
 
     def set_parameters(self, **kwargs):
@@ -43,10 +46,17 @@ class MACDStrategy(Strategy):
 
     def generate_signals(self, data: pd.DataFrame) -> Dict[str, float]:
         signals = {}
-        if data.empty or CLOSE not in data.columns:
+        # Check if Ticker data is present
+        if DataRequirement.TICKER not in data:
+            print("Error: Ticker data not found in data dictionary for MACDStrategy.")
             return signals
 
-        tickers = data.index.get_level_values(TICKER).unique()
+        ticker_data_df = data[DataRequirement.TICKER]
+
+        if ticker_data_df.empty or CLOSE not in ticker_data_df.columns:
+            return signals
+
+        tickers = ticker_data_df.index.get_level_values(TICKER).unique()
         min_required_data = (
             self.parameters["macd"]["slow_period"]
             + self.parameters["macd"]["signal_period"]
@@ -55,17 +65,17 @@ class MACDStrategy(Strategy):
 
         for ticker in tickers:
             try:
-                ticker_data = data.xs(ticker, level=TICKER)[CLOSE]
-                if len(ticker_data) < min_required_data:
-                    signals[ticker] = 0.0  # Not enough data
-                    continue
+                close_prices = ticker_data_df.xs(ticker, level=TICKER)[CLOSE]
             except KeyError:
-                signals[ticker] = 0.0  # Ticker data not available
+                continue  # Ticker not present in this data slice?
+
+            if len(close_prices) < min_required_data:
+                signals[ticker] = 0.0  # Not enough data
                 continue
 
             # Calculate MACD using ta library
             signal = generate_macd_signal_for_ticker(
-                ticker_data, self.parameters["macd"]
+                close_prices, self.parameters["macd"]
             )
             signals[ticker] = signal
 

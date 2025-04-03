@@ -81,6 +81,7 @@ class Strategy(ABC):
     def execute(self, data: DataDict, next_day_data: dict[str, OHLCData]) -> None:
         """
         Execute the strategy using the provided data dictionary.
+        Prioritizes sells first, then buys, with strongest signals first in each category.
 
         Parameters:
         -----------
@@ -159,8 +160,26 @@ class Strategy(ABC):
         # Override signals with stop loss signals if any
         adjusted_signals.update(stop_loss_signals)
 
-        # Execute trades based on adjusted signals
-        for ticker, signal in adjusted_signals.items():
+        # Separate signals into sell and buy, then sort each by strength
+        sell_signals = [
+            (ticker, signal)
+            for ticker, signal in adjusted_signals.items()
+            if signal < 0
+        ]
+        buy_signals = [
+            (ticker, signal)
+            for ticker, signal in adjusted_signals.items()
+            if signal > 0
+        ]
+
+        # Sort sell signals by strength (most negative first)
+        sell_signals.sort(key=lambda x: x[1])
+
+        # Sort buy signals by strength (most positive first)
+        buy_signals.sort(key=lambda x: x[1], reverse=True)
+
+        # Process all sell signals first (risk management and freeing capital)
+        for ticker, signal in sell_signals:
             if (
                 ticker not in self.portfolio.current_prices
                 or self.portfolio.current_prices[ticker] <= 0
@@ -190,6 +209,39 @@ class Strategy(ABC):
                 ):
                     if ticker in self.stop_loss_manager.entry_prices:
                         del self.stop_loss_manager.entry_prices[ticker]
+
+        # Then process all buy signals (allocating freed-up capital)
+        for ticker, signal in buy_signals:
+            if (
+                ticker not in self.portfolio.current_prices
+                or self.portfolio.current_prices[ticker] <= 0
+            ):
+                continue  # Skip if price is missing or invalid
+
+            # Calculate desired position size based on signal
+            target_shares = self.calculate_position_size(ticker, signal)
+
+            # Get current position size
+            current_shares = self.portfolio.holdings.get(ticker, 0)
+
+            # Calculate shares to trade to reach the target position
+            trade_shares = target_shares - current_shares
+
+            if trade_shares != 0:
+                # Place the order using the base class method
+                self.place_order(
+                    ticker, trade_shares, latest_timestamp, next_day_data.get(ticker)
+                )
+
+                # Update entry price for new positions
+                if (
+                    current_shares == 0
+                    and trade_shares > 0
+                    and self.stop_loss_manager is not None
+                ):
+                    current_price = self.portfolio.current_prices.get(ticker)
+                    if current_price:
+                        self.stop_loss_manager.update_entry_price(ticker, current_price)
 
     def _update_current_prices(self, ticker_data: pd.DataFrame, timestamp) -> None:
         """

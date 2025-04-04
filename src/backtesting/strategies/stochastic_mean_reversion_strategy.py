@@ -531,7 +531,9 @@ class StochasticMeanReversionStrategy(Strategy):
 
         return adjusted_signals
 
-    def calculate_position_size(self, ticker: str, signal: float) -> int:
+    def calculate_position_size(
+        self, ticker: str, portfolio: Portfolio, signals: Dict[str, float]
+    ) -> int:
         """
         Calculate position size for a trade based on the signal strength.
 
@@ -539,22 +541,29 @@ class StochasticMeanReversionStrategy(Strategy):
         -----------
         ticker : str
             The ticker symbol
-        signal : float
-            Signal strength, typically between -1 and 1
+        portfolio : Portfolio
+            The portfolio object
+        signals : Dict[str, float]
+            All current signals for context
 
         Returns:
         --------
         int
             Number of shares to buy or sell
         """
+        # Get the signal for this ticker
+        signal = signals.get(ticker, 0)
+        if signal == 0:
+            return 0
+
         # More aggressive position sizing
         max_capital_per_position = self.parameters.get(
             "max_capital_per_position", 0.40
         )  # Increased from 0.25
-        portfolio_value = self.portfolio.get_value()
+        portfolio_value = portfolio.get_value()
         max_position = max_capital_per_position * portfolio_value
 
-        current_price = self.portfolio.current_prices.get(ticker, 0)
+        current_price = portfolio.current_prices.get(ticker, 0)
         if current_price <= 0:
             return 0
 

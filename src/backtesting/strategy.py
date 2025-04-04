@@ -8,6 +8,10 @@ from backtesting.portfolio import Portfolio
 from backtesting.risk_management.stop_loss_manager import (
     StopLossManager,
 )
+from backtesting.risk_management.position_sizing import (
+    PositionSizingFactory,
+    PositionSizingStrategy,
+)
 from common.data_requirements import DataRequirement
 from common.df_columns import CLOSE, TICKER, TIMESTAMP
 from common.ohlc import OHLCData
@@ -41,10 +45,48 @@ class Strategy(ABC):
         self.current_signals = {}  # Current trading signals for each ticker
         self.last_update_time = None  # Timestamp of last strategy update
         self.stop_loss_manager: Optional[StopLossManager] = None  # Stop loss manager
+        self.position_sizing: Optional[PositionSizingStrategy] = (
+            None  # Position sizing strategy
+        )
 
     def set_parameters(self, **kwargs):
         """Set strategy parameters."""
         self.parameters.update(kwargs)
+
+        # Initialize or update position sizing strategy if parameters changed
+        if "position_sizing_type" in kwargs or "position_sizing_parameters" in kwargs:
+            position_sizing_type = self.parameters.get(
+                "position_sizing_type", "fixed_percentage"
+            )
+            position_sizing_params = self.parameters.get(
+                "position_sizing_parameters", None
+            )
+
+            # Adjust position sizing parameters based on the universe size if parameter provided
+            if "ticker_universe" in kwargs or "ticker_universe" in self.parameters:
+                ticker_universe = self.parameters.get("ticker_universe", [])
+                if isinstance(ticker_universe, list) and ticker_universe:
+                    ticker_count = len(ticker_universe)
+                    position_sizing_params = (
+                        PositionSizingFactory.adjust_parameters_for_universe(
+                            position_sizing_params, ticker_count
+                        )
+                    )
+
+            self.position_sizing = PositionSizingFactory.get_strategy(
+                position_sizing_type, self.portfolio, position_sizing_params
+            )
+
+        # Initialize or update stop loss manager if parameters changed
+        if "use_stop_loss" in kwargs or "stop_loss_parameters" in kwargs:
+            if (
+                self.parameters.get("use_stop_loss", False)
+                and "stop_loss_parameters" in self.parameters
+            ):
+                self.stop_loss_manager = StopLossManager(
+                    self.portfolio, self.parameters["stop_loss_parameters"]
+                )
+
         return self
 
     @abstractmethod
@@ -123,11 +165,35 @@ class Strategy(ABC):
         if (
             self.parameters.get("use_stop_loss", False)
             and "stop_loss_parameters" in self.parameters
+            and self.stop_loss_manager is None
         ):
-            if self.stop_loss_manager is None:
-                self.stop_loss_manager = StopLossManager(
-                    self.portfolio, self.parameters["stop_loss_parameters"]
+            self.stop_loss_manager = StopLossManager(
+                self.portfolio, self.parameters["stop_loss_parameters"]
+            )
+
+        # Initialize position sizing strategy if not already set
+        if self.position_sizing is None:
+            position_sizing_type = self.parameters.get(
+                "position_sizing_type", "fixed_percentage"
+            )
+            position_sizing_params = self.parameters.get(
+                "position_sizing_parameters", None
+            )
+
+            # Get unique tickers from the data to adjust position sizing
+            unique_tickers = ticker_data.index.get_level_values(TICKER).unique()
+            ticker_count = len(unique_tickers)
+
+            # Adjust parameters based on the universe size
+            position_sizing_params = (
+                PositionSizingFactory.adjust_parameters_for_universe(
+                    position_sizing_params, ticker_count
                 )
+            )
+
+            self.position_sizing = PositionSizingFactory.get_strategy(
+                position_sizing_type, self.portfolio, position_sizing_params
+            )
 
         # Apply stop loss checks if manager is active
         stop_loss_signals = {}
@@ -186,8 +252,10 @@ class Strategy(ABC):
             ):
                 continue  # Skip if price is missing or invalid
 
-            # Calculate desired position size based on signal
-            target_shares = self.calculate_position_size(ticker, signal)
+            # Calculate desired position size using the position sizing strategy
+            target_shares = self.position_sizing.calculate_position_size(
+                ticker, signal, adjusted_signals
+            )
 
             # Get current position size
             current_shares = self.portfolio.holdings.get(ticker, 0)
@@ -218,8 +286,10 @@ class Strategy(ABC):
             ):
                 continue  # Skip if price is missing or invalid
 
-            # Calculate desired position size based on signal
-            target_shares = self.calculate_position_size(ticker, signal)
+            # Calculate desired position size using the position sizing strategy
+            target_shares = self.position_sizing.calculate_position_size(
+                ticker, signal, adjusted_signals
+            )
 
             # Get current position size
             current_shares = self.portfolio.holdings.get(ticker, 0)
@@ -263,39 +333,6 @@ class Strategy(ABC):
             print(
                 f"Warning: Could not extract data slice for timestamp {timestamp} in {self.name}"
             )
-
-    def calculate_position_size(self, ticker: str, signal: float) -> int:
-        """
-        Calculate position size for a trade based on the signal strength.
-
-        Parameters:
-        -----------
-        ticker : str
-            The ticker symbol
-        signal : float
-            Signal strength, typically between -1 and 1
-
-        Returns:
-        --------
-        int
-            Number of shares to buy or sell
-        """
-        # Default implementation based on fixed position sizing
-        # Subclasses can override with more sophisticated logic
-        max_capital_per_position = self.parameters.get("max_capital_per_position", 0.1)
-        portfolio_value = self.portfolio.get_value()
-        max_position = max_capital_per_position * portfolio_value
-
-        current_price = self.portfolio.current_prices.get(ticker, 0)
-        if current_price <= 0:
-            return 0
-
-        # Base position size on signal strength
-        position_value = max_position * abs(signal)
-        shares = int(position_value / current_price)
-
-        # Negative for sell, positive for buy
-        return shares if signal > 0 else -shares
 
     def place_order(
         self, ticker: str, quantity: int, timestamp: datetime, next_day_data: OHLCData
@@ -404,6 +441,30 @@ class Strategy(ABC):
         ):
             self.stop_loss_manager = StopLossManager(
                 self.portfolio, self.parameters["stop_loss_parameters"]
+            )
+
+        # Initialize position sizing strategy if not already set
+        if self.position_sizing is None:
+            position_sizing_type = self.parameters.get(
+                "position_sizing_type", "fixed_percentage"
+            )
+            position_sizing_params = self.parameters.get(
+                "position_sizing_parameters", None
+            )
+
+            # Get unique tickers from the data to adjust position sizing
+            unique_tickers = ticker_data.index.get_level_values(TICKER).unique()
+            ticker_count = len(unique_tickers)
+
+            # Adjust parameters based on the universe size
+            position_sizing_params = (
+                PositionSizingFactory.adjust_parameters_for_universe(
+                    position_sizing_params, ticker_count
+                )
+            )
+
+            self.position_sizing = PositionSizingFactory.get_strategy(
+                position_sizing_type, self.portfolio, position_sizing_params
             )
 
         # Update stop losses without executing trades

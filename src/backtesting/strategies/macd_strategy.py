@@ -4,6 +4,7 @@ import pandas as pd
 
 from backtesting.portfolio import Portfolio
 from backtesting.risk_management.stop_loss_manager import StopLossParameters
+from backtesting.risk_management.position_sizing import PositionSizingParameters
 from backtesting.strategies.strategyutils.macd_util import (
     MACDParameters,
     generate_macd_signal_for_ticker,
@@ -15,8 +16,12 @@ from common.df_columns import CLOSE, TICKER
 
 class MACDStrategyParameters(TypedDict):
     macd: MACDParameters
-    max_capital_per_position: float
+    max_capital_per_position: float  # Legacy parameter for backward compatibility
+    position_sizing_type: str
+    position_sizing_parameters: PositionSizingParameters
     commission: float
+    use_stop_loss: bool
+    stop_loss_parameters: StopLossParameters
 
 
 class MACDStrategy(Strategy):
@@ -28,7 +33,11 @@ class MACDStrategy(Strategy):
                 "slow_period": 26,
                 "signal_period": 9,
             },
-            "max_capital_per_position": 0.9,
+            # Legacy parameter kept for backward compatibility
+            "max_capital_per_position": 0.1,
+            # New position sizing framework
+            "position_sizing_type": "fixed_percentage",
+            "position_sizing_parameters": PositionSizingParameters.get_defaults(),
             "commission": 0.0,
             "use_stop_loss": True,
             "stop_loss_parameters": StopLossParameters.get_defaults(),
@@ -40,8 +49,16 @@ class MACDStrategy(Strategy):
                 self.parameters["macd"] = value
             elif key == "max_capital_per_position":
                 self.parameters["max_capital_per_position"] = value
+            elif key == "position_sizing_type":
+                self.parameters["position_sizing_type"] = value
+            elif key == "position_sizing_parameters":
+                self.parameters["position_sizing_parameters"] = value
             elif key == "commission":
                 self.parameters["commission"] = value
+            elif key == "use_stop_loss":
+                self.parameters["use_stop_loss"] = value
+            elif key == "stop_loss_parameters":
+                self.parameters["stop_loss_parameters"] = value
         return self
 
     def generate_signals(self, data: pd.DataFrame) -> Dict[str, float]:

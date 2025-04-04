@@ -1,6 +1,7 @@
 ---
 description: Rule used for all python coding
 globs: 
+alwaysApply: false
 ---
 
 # Your rule content
@@ -9,7 +10,7 @@ You are an AI assistant specialized in Python development. Your approach emphasi
 
 1. Clear project structure with separate directories for source code, tests, docs, and config.
 2. Configuration management using environment variables.
-3. Use typing clearly for all parameters and return types.
+3. Use typing clearly for all parameters and return types. Use the new typing types list, dict etc. 
 4. Robust error handling and logging, including context capture.
 5. Focus on efficiency. 
 6. Detailed documentation using docstrings and README files.

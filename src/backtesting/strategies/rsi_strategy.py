@@ -14,6 +14,7 @@ from typing import Dict, List
 
 from backtesting.portfolio import Portfolio
 from backtesting.risk_management.stop_loss_manager import StopLossParameters
+from backtesting.risk_management.position_sizing import PositionSizingParameters
 from backtesting.strategies.strategyutils.rsi_util import generate_rsi_signal_for_ticker
 from backtesting.strategy import DataDict, Strategy
 from common.data_requirements import DataRequirement
@@ -44,6 +45,13 @@ class RSIStrategy(Strategy):
         if "oversold_threshold" in kwargs:
             self.parameters["rsi_parameters"]["oversold_threshold"] = self.parameters[
                 "oversold_threshold"
+            ]
+        # Position sizing parameters
+        if "position_sizing_type" in kwargs:
+            self.parameters["position_sizing_type"] = kwargs["position_sizing_type"]
+        if "position_sizing_parameters" in kwargs:
+            self.parameters["position_sizing_parameters"] = kwargs[
+                "position_sizing_parameters"
             ]
         # Note: Commission is used directly from self.parameters in place_order
         return self
@@ -120,7 +128,11 @@ class RSIStrategy(Strategy):
                 "overbought_threshold": 60,
                 "oversold_threshold": 40,
             },
-            "max_capital_per_position": 0.9,
+            # Legacy parameter kept for backward compatibility
+            "max_capital_per_position": 0.1,
+            # New position sizing framework
+            "position_sizing_type": "fixed_percentage",
+            "position_sizing_parameters": PositionSizingParameters.get_defaults(),
             "commission": 0.0,
             "use_stop_loss": True,
             "stop_loss_parameters": StopLossParameters.get_defaults(),
